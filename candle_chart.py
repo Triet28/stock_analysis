@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 app = Dash(__name__)
-
+server = app.server
 app.layout = html.Div([
     dcc.Location(id='url', refresh=True),  # Để theo dõi URL
 
