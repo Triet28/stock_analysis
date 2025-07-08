@@ -50,7 +50,7 @@ def display_chart(pathname, slider_value):
         return go.Figure(), "📢 Please enter a stock symbol above."
 
     symbol = pathname.strip('/').upper()
-    file_path = f"C:/Users/Admin/Desktop/Study/clone_project/crawl/data/{symbol}.xlsx"
+    file_path = f"/data/{symbol}.xlsx"
 
     if not os.path.exists(file_path):
         return go.Figure(), f"❌ File not found: {symbol}.xlsx"
