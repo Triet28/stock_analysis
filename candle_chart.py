@@ -6,6 +6,7 @@ import requests
 
 app = Dash(__name__)
 
+server = app.server
 def update_symbol(symbol):
     headers = {
         "User-Agent": "Mozilla/5.0",
