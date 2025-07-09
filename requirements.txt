@@ -1,6 +1,6 @@
-dash
-gunicorn
-plotly
+fastapi
+uvicorn
 pandas
-openpyxl
+plotly
+kaleido
 requests
