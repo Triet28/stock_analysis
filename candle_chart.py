@@ -23,6 +23,7 @@ import requests
 import os
 
 app = FastAPI()
+server = app.server
 
 class CandleData(BaseModel):
     dates: list
