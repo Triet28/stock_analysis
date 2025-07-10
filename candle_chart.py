@@ -20,6 +20,10 @@ class CandleData(BaseModel):
     close: list
     volume: list
 
+BEARER_TOKEN = os.environ.get("BEARER_TOKEN")
+if not BEARER_TOKEN:
+    raise RuntimeError("❌ Thiếu biến môi trường BEARER_TOKEN")
+
 def update_attachment(file_path=None, base64String=None, ext="png", attachmentField=None):
     if ext == "png":
         mime_type = "image/png"
@@ -58,7 +62,7 @@ def update_attachment(file_path=None, base64String=None, ext="png", attachmentFi
         "POST",
         url="https://stock-agentic.digiforce.vn/api/attachments:create",
         headers={
-            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInJvbGVOYW1lIjoiYWRtaW4iLCJpYXQiOjE3NTE5NzA3OTUsImV4cCI6MzMzMDk1NzA3OTV9.CtncBevzxc4nphny9yFyyT3So7L1kliaMZGrr1WhF6s",
+            "Authorization": f'Bearer {BEARER_TOKEN}',
         },
         params={"attachmentField": attachmentField},
         files=files,
