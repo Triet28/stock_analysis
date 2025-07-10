@@ -95,6 +95,7 @@ def plot_candlestick_symbol(
         resp.raise_for_status()
         data = resp.json()["data"]
     except Exception as e:
+        print(resp.text)
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy dữ liệu từ API: {str(e)}")
     if not data or len(data) < 2:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu hoặc dữ liệu không đủ để vẽ biểu đồ.")
