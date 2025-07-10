@@ -96,7 +96,7 @@ def plot_candlestick_symbol(
         f"&fields=open,close,high,low,volume,time"
     )
     headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInRlbXAiOnRydWUsImlhdCI6MTc1MTk2OTUyNywic2lnbkluVGltZSI6MTc1MTk2OTUyNzU2MywiZXhwIjoxNzUyMDU1OTI3LCJqdGkiOiI5NmVmNTFmYi01NzkzLTRmNWUtYTIwZC1hODU1MTkyOTdlYjkifQ.XTIw48yEz2ZK7AVjkvFT8jLspStQDUl-dfnw5Tlic-U'
+        'authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInJvbGVOYW1lIjoiYWRtaW4iLCJpYXQiOjE3NTIxMzE5OTksImV4cCI6MzMzMDk3MzE5OTl9.E6XSNYxQ2PbOy6G4mWwLt9YzQk_T804-N848Ytrbl50'
     }
     try:
         resp = requests.get(url, headers=headers)
