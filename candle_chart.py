@@ -21,9 +21,12 @@ import uuid
 import base64
 import requests
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI()
-server = app.server
 
 class CandleData(BaseModel):
     dates: list
@@ -69,9 +72,9 @@ def update_attachment(file_path=None, base64String=None, ext="png", attachmentFi
 
     response = requests.request(
         "POST",
-        url="https://stock-agentic.digiforce.vn/api/attachments:create",
+        url=f"{os.getenv('API_BASE_URL')}/api/attachments:create",
         headers={
-            "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInJvbGVOYW1lIjoiYWRtaW4iLCJpYXQiOjE3NTE5NzA3OTUsImV4cCI6MzMzMDk1NzA3OTV9.CtncBevzxc4nphny9yFyyT3So7L1kliaMZGrr1WhF6s",
+            "Authorization": f"Bearer {os.getenv('ATTACHMENT_TOKEN')}",
         },
         params={"attachmentField": attachmentField},
         files=files,
@@ -83,21 +86,24 @@ def plot_candlestick_symbol(
         symbol: str = Query(..., description="Stock symbol"),
         startDate: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
         endDate: Optional[str] = Query(None, description="End date (YYYY-MM-DD)")  ):
+    
     filters = [
         {"stock_code": {"stockCode": {"$eq": symbol}}}
     ]
+    
+    # Apply date filter only if both dates are provided
     if startDate and endDate:
         filters.append({"time": {"$dateBetween": [f"{startDate} 00:00:00", f"{endDate} 00:00:00"]}})
     
     filter_str = requests.utils.quote(str({"$and": filters}).replace("'", '"'))
     url = (
-        f"https://stock-agentic.digiforce.vn/api/trade_data:list"
+        f"{os.getenv('API_BASE_URL')}/api/trade_data:list"
         f"?pageSize=365&page=1&appends[]=stock_code"
         f"&filter={filter_str}"
         f"&fields=open,close,high,low,volume,time"
     )
     headers = {
-        'authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjIsInRlbXAiOnRydWUsImlhdCI6MTc1MTk2OTUyNywic2lnbkluVGltZSI6MTc1MTk2OTUyNzU2MywiZXhwIjoxNzUyMDU1OTI3LCJqdGkiOiI5NmVmNTFmYi01NzkzLTRmNWUtYTIwZC1hODU1MTkyOTdlYjkifQ.XTIw48yEz2ZK7AVjkvFT8jLspStQDUl-dfnw5Tlic-U'
+        'authorization': f"Bearer {os.getenv('TRADE_DATA_TOKEN')}"
     }
     try:
         resp = requests.get(url, headers=headers)
@@ -107,6 +113,12 @@ def plot_candlestick_symbol(
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy dữ liệu từ API: {str(e)}")
     if not data or len(data) < 2:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu hoặc dữ liệu không đủ để vẽ biểu đồ.")
+    
+    # Extract actual date range from the response data
+    dates = [pd.to_datetime(item["time"]) for item in data]
+    actual_start_date = min(dates).strftime('%Y-%m-%d')  # Oldest date
+    actual_end_date = max(dates).strftime('%Y-%m-%d')    # Latest date
+    
     # Chuyển đổi dữ liệu về dạng CandleData
     candle_data = {
         "dates": [item["time"] for item in data],
@@ -117,10 +129,10 @@ def plot_candlestick_symbol(
         "volume": [item["volume"] for item in data],
     }
 
-    # Tạo đối tượng CandleData và gọi hàm vẽ chart như cũ
-    return plot_candlestick(CandleData(**candle_data), symbol)
+    # Tạo đối tượng CandleData và gọi hàm vẽ chart với date range
+    return plot_candlestick(CandleData(**candle_data), symbol, actual_start_date, actual_end_date)
 
-def plot_candlestick(data: CandleData, symbol: str):
+def plot_candlestick(data: CandleData, symbol: str, start_date: str, end_date: str):
     df = pd.DataFrame({
         'Date': pd.to_datetime(data.dates, utc=True, errors='coerce'),
         'Open': data.open,
@@ -136,26 +148,30 @@ def plot_candlestick(data: CandleData, symbol: str):
     df['MA50'] = df['Close'].rolling(window=50).mean()
     df['MA100'] = df['Close'].rolling(window=100).mean()
     df['MA200'] = df['Close'].rolling(window=200).mean()
-    df['VolumeColor'] = ['red' if c < o else 'blue' for c, o in zip(df['Close'], df['Open'])]
+    df['VolumeColor'] = ['#ff5252' if c < o else '#00998b' for c, o in zip(df['Close'], df['Open'])]
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
 
     fig.add_trace(go.Candlestick(
         x=df['Date'], open=df['Open'], high=df['High'],
         low=df['Low'], close=df['Close'],
-        increasing_line_color='green',
-        decreasing_line_color='red',
+        increasing_line_color='#00998b',
+        decreasing_line_color='#ff5252',
         name='Giá'), row=1, col=1)
     
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA10'], mode='lines', line=dict(color='purple'), name='MA10'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA50'], mode='lines', line=dict(color='blue'), name='MA50'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA100'], mode='lines', line=dict(color='orange'), name='MA100'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA200'], mode='lines', line=dict(color='red'), name='MA200'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA10'], mode='lines', line=dict(color='#694fa9'), name='MA10'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA50'], mode='lines', line=dict(color='#7ccaf2'), name='MA50'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA100'], mode='lines', line=dict(color='#e15545'), name='MA100'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA200'], mode='lines', line=dict(color='#51b41f'), name='MA200'), row=1, col=1)
 
     fig.add_trace(go.Bar(x=df['Date'], y=df['Volume'], name='Volume', marker_color=df['VolumeColor']), row=2, col=1)
 
+    # Format dates for display
+    start_display = pd.to_datetime(start_date).strftime('%d/%m/%Y')
+    end_display = pd.to_datetime(end_date).strftime('%d/%m/%Y')
+    
     fig.update_layout(
-        title=f'Candlestick Chart for Stock {symbol}',
+        title=f'Candlestick Chart for Stock {symbol} ({start_display} - {end_display})',
         template='plotly_white',
         xaxis_rangeslider_visible=False,
         height=700,
@@ -175,7 +191,7 @@ def plot_candlestick(data: CandleData, symbol: str):
 
     # return upload_result
 
-    url = "https://stock-agentic.digiforce.vn"+upload_result["data"]["url"]
+    url = f"{os.getenv('API_BASE_URL')}{upload_result['data']['url']}"
 
     if os.path.exists(output_file):
         os.remove(output_file)
