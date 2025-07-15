@@ -1,15 +1,3 @@
-# pip install fastapi uvicorn plotly pandas kaleido
-
-# {
-#   "dates": ["2023-01-03", "2023-01-06", "2023-01-10", "2023-01-12", "2023-01-15",
-#             "2023-01-18", "2023-01-21", "2023-01-25", "2023-01-28", "2023-01-30"],
-#   "open": [100, 102, 101, 105, 107, 106, 108, 110, 109, 111],
-#   "high": [105, 104, 106, 108, 110, 109, 112, 113, 115, 117],
-#   "low":  [98, 100, 99, 103, 104, 103, 105, 107, 106, 109],
-#   "close":[102, 101, 105, 107, 108, 107, 111, 112, 114, 116],
-#   "volume":[1000,1200,1100,1500,1600,1550,1700,1800,1750,1900]
-# }
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi import Query, HTTPException
@@ -35,6 +23,10 @@ class CandleData(BaseModel):
     low: list
     close: list
     volume: list
+
+BEARER_TOKEN = os.environ.get("BEARER_TOKEN")
+if not BEARER_TOKEN:
+    raise RuntimeError("❌ Thiếu biến môi trường BEARER_TOKEN")
 
 def update_attachment(file_path=None, base64String=None, ext="png", attachmentField=None):
     if ext == "png":
@@ -110,6 +102,7 @@ def plot_candlestick_symbol(
         resp.raise_for_status()
         data = resp.json()["data"]
     except Exception as e:
+        print(resp.text)
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy dữ liệu từ API: {str(e)}")
     if not data or len(data) < 2:
         raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu hoặc dữ liệu không đủ để vẽ biểu đồ.")
@@ -149,6 +142,7 @@ def plot_candlestick(data: CandleData, symbol: str, start_date: str, end_date: s
     df['MA100'] = df['Close'].rolling(window=100).mean()
     df['MA200'] = df['Close'].rolling(window=200).mean()
     df['VolumeColor'] = ['#ff5252' if c < o else '#00998b' for c, o in zip(df['Close'], df['Open'])]
+    df['VolumeColor'] = ['#ff5252' if c < o else '#00998b' for c, o in zip(df['Close'], df['Open'])]
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.7, 0.3], vertical_spacing=0.03)
 
@@ -157,8 +151,14 @@ def plot_candlestick(data: CandleData, symbol: str, start_date: str, end_date: s
         low=df['Low'], close=df['Close'],
         increasing_line_color='#00998b',
         decreasing_line_color='#ff5252',
+        increasing_line_color='#00998b',
+        decreasing_line_color='#ff5252',
         name='Giá'), row=1, col=1)
     
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA10'], mode='lines', line=dict(color='#694fa9'), name='MA10'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA50'], mode='lines', line=dict(color='#7ccaf2'), name='MA50'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA100'], mode='lines', line=dict(color='#e15545'), name='MA100'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Date'], y=df['MA200'], mode='lines', line=dict(color='#51b41f'), name='MA200'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA10'], mode='lines', line=dict(color='#694fa9'), name='MA10'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA50'], mode='lines', line=dict(color='#7ccaf2'), name='MA50'), row=1, col=1)
     fig.add_trace(go.Scatter(x=df['Date'], y=df['MA100'], mode='lines', line=dict(color='#e15545'), name='MA100'), row=1, col=1)
