@@ -14,6 +14,7 @@ class ChartConfig(BaseModel):
     show_bb: bool = False
     show_ich: bool = False
     show_rsi: bool = False
+    show_macd: bool = False
     symbol: str
     start_date: str
     end_date: str
