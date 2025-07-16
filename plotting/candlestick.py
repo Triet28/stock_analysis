@@ -10,6 +10,6 @@ def add_candlestick_trace(fig, df, row=1, col=1):
         close=df['Close'],
         increasing_line_color='#00998b',
         decreasing_line_color='#ff5252',
-        name='Giá'
+        name='Price'
     ), row=row, col=col)
     return fig
