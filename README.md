@@ -11,6 +11,8 @@ API phân tích cổ phiếu với các chỉ báo kỹ thuật (Technical Analy
   - Ichimoku Cloud (Tenkan, Kijun, Senkou A/B, Chikou)
   - RSI (Relative Strength Index)
   - MACD (Moving Average Convergence Divergence)
+  - Support & Resistance (Hỗ trợ & Kháng cự)
+- **Phân tích xu hướng**: Tự động phân tích xu hướng giá theo tuần
 - **Volume Chart**: Hiển thị khối lượng giao dịch
 - **Export PNG**: Tự động upload và trả về URL hình ảnh
 
@@ -23,33 +25,96 @@ git clone <repository-url>
 cd stock_analysis
 ```
 
-### 2. Tạo Python virtual environment
+### 2. Cài đặt Python virtual environment
 
+#### Tại sao cần virtual environment?
+- **Cô lập dependencies**: Tránh xung đột giữa các dự án khác nhau
+- **Quản lý phiên bản**: Kiểm soát chính xác phiên bản các thư viện
+- **Reproducibility**: Đảm bảo môi trường nhất quán giữa các máy khác nhau
+
+#### Kiểm tra Python version
 ```bash
+python --version
+# Cần Python 3.8+ (khuyến nghị Python 3.10+)
+```
+
+#### Tạo virtual environment
+```bash
+# Tạo môi trường ảo với tên .venv
 python -m venv .venv
+
+# Hoặc với tên khác
+python -m venv myenv
 ```
 
 ### 3. Kích hoạt virtual environment
 
-**Windows:**
+**Windows (PowerShell/CMD):**
 ```bash
 .venv\Scripts\activate
 ```
 
-**macOS/Linux:**
+**macOS/Linux (Bash/Zsh):**
 ```bash
 source .venv/bin/activate
 ```
+
+**Kiểm tra đã kích hoạt thành công:**
+- Prompt sẽ hiển thị `(.venv)` ở đầu dòng
+- Chạy `which python` (Linux/macOS) hoặc `where python` (Windows) để xác nhận đường dẫn
 
 **Thoát virtual environment:**
 ```bash
 deactivate
 ```
 
+#### Troubleshooting Virtual Environment
+
+**Lỗi "execution policy" trên Windows:**
+```bash
+# Chạy PowerShell với quyền admin và thực hiện:
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Sau đó thử lại:
+.venv\Scripts\activate
+```
+
+**Lỗi "python not found":**
+```bash
+# Thử với python3
+python3 -m venv .venv
+python3 -m pip install -r requirements.txt
+```
+
+**Tái tạo virtual environment:**
+```bash
+# Xóa thư mục cũ
+rm -rf .venv  # Linux/macOS
+rmdir /s .venv  # Windows
+
+# Tạo lại
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+pip install -r requirements.txt
+```
+
 ### 4. Cài đặt dependencies
 
+**Lưu ý:** Luôn kích hoạt virtual environment trước khi cài đặt!
+
 ```bash
+# Đảm bảo đã kích hoạt venv (có (.venv) ở đầu prompt)
 pip install -r requirements.txt
+
+# Kiểm tra cài đặt thành công
+pip list
+pip show fastapi plotly pandas
+```
+
+**Cập nhật pip (nếu cần):**
+```bash
+python -m pip install --upgrade pip
 ```
 
 ### 5. Cấu hình environment variables
@@ -69,15 +134,26 @@ API_BASE_URL=https://stock-agentic.digiforce.vn
 
 ## Cách chạy server
 
+**⚠️ Lưu ý quan trọng:** Luôn kích hoạt virtual environment trước khi chạy server!
+
 ### 1. Chạy development server
 
 ```bash
+# Bước 1: Kích hoạt virtual environment
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+
+# Bước 2: Chạy server
 python candlestick_chart.py
 ```
 
 Hoặc sử dụng uvicorn:
 
 ```bash
+# Cách 1: Chạy với reload (development)
+uvicorn candlestick_chart:app --reload --host 0.0.0.0 --port 8000
+
+# Cách 2: Chạy production
 uvicorn candlestick_chart:app --host 0.0.0.0 --port 8000
 ```
 
@@ -108,6 +184,7 @@ POST /plot
 | ICH | boolean | No | Hiển thị Ichimoku Cloud |
 | RSI | boolean | No | Hiển thị RSI |
 | MACD | boolean | No | Hiển thị MACD |
+| SR | boolean | No | Hiển thị Support & Resistance |
 
 ### Ví dụ sử dụng
 
@@ -126,10 +203,16 @@ curl -X POST "http://localhost:8000/plot?symbol=FPT&MA=true&RSI=true"
 #### 3. Biểu đồ với tất cả chỉ báo trong khoảng thời gian cụ thể
 
 ```bash
-curl -X POST "http://localhost:8000/plot?symbol=FPT&startDate=2025-01-01&endDate=2025-07-08&MA=true&BB=true&ICH=true&RSI=true&MACD=true"
+curl -X POST "http://localhost:8000/plot?symbol=FPT&startDate=2025-01-01&endDate=2025-07-08&MA=true&BB=true&ICH=true&RSI=true&MACD=true&SR=true"
 ```
 
-#### 4. Sử dụng với Python requests
+#### 4. Biểu đồ với Support & Resistance
+
+```bash
+curl -X POST "http://localhost:8000/plot?symbol=FPT&SR=true"
+```
+
+#### 5. Sử dụng với Python requests
 
 ```python
 import requests
@@ -141,7 +224,8 @@ params = {
     "endDate": "2025-07-08",
     "MA": True,
     "RSI": True,
-    "MACD": True
+    "MACD": True,
+    "SR": True
 }
 
 response = requests.post(url, params=params)
@@ -164,7 +248,10 @@ stock_analysis/
 │   ├── bollinger_bands.py
 │   ├── ichimoku.py
 │   ├── rsi.py
-│   └── macd.py
+│   ├── macd.py
+│   ├── support.py          # Support level calculations
+│   ├── resistance.py       # Resistance level calculations
+│   └── trend_analysis.py   # Weekly trend analysis
 └── plotting/               # Chart plotting functions
     ├── candlestick.py
     ├── volume.py
@@ -172,7 +259,10 @@ stock_analysis/
     ├── bollinger_bands.py
     ├── ichimoku.py
     ├── rsi.py
-    └── macd.py
+    ├── macd.py
+    ├── support.py          # Support level plotting
+    └── resistance.py       # Resistance level plotting
+    └── support_resistance.py
 ```
 
 ## Response Format
@@ -182,7 +272,35 @@ API trả về JSON với định dạng:
 ```json
 {
     "message": "✅ Vẽ biểu đồ và upload thành công",
-    "upload_result": "https://stock-agentic.digiforce.vn/api/attachments/view/xxxxx"
+    "upload_result": "https://stock-agentic.digiforce.vn/api/attachments/view/xxxxx",
+    "trend": [
+        {
+            "symbol": "FPT",
+            "period": "02/01/2025 to 06/01/2025",
+            "trend": "uptrend",
+            "percent_change": 2.5
+        },
+        {
+            "symbol": "FPT", 
+            "period": "09/01/2025 to 13/01/2025",
+            "trend": "downtrend",
+            "percent_change": -1.8
+        },
+        {
+            "symbol": "FPT",
+            "period": "16/01/2025 to 20/01/2025", 
+            "trend": "sideways trend",
+            "percent_change": 0.3
+        }
+    ],
+    "trend_summary": {
+        "total_weeks": 27,
+        "uptrend_weeks": 7,
+        "downtrend_weeks": 9,
+        "sideways_weeks": 11,
+        "dominant_trend": "sideways trend"
+    }
+}
 }
 ```
 
@@ -203,6 +321,7 @@ API trả về JSON với định dạng:
 
 - Đảm bảo đã kích hoạt virtual environment
 - Cài đặt lại dependencies: `pip install -r requirements.txt`
+```
 
 ## Dependencies
 

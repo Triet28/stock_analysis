@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, HTTPException
 from typing import Optional
 import pandas as pd
 from dotenv import load_dotenv
@@ -7,13 +7,17 @@ from plotly.subplots import make_subplots
 import base64
 import os
 
-from models import CandleData, ChartConfig
+from models import CandleData, ChartConfig, ChartRequest
 from utils import fetch_stock_data, update_attachment
 from indicators.moving_averages import calculate_moving_averages
 from indicators.bollinger_bands import calculate_bollinger_bands
 from indicators.ichimoku import calculate_ichimoku
 from indicators.rsi import calculate_rsi
 from indicators.macd import calculate_macd
+from indicators.support import calculate_support
+from indicators.resistance import calculate_resistance
+from indicators.trend_analysis import calculate_weekly_trend, get_trend_summary
+from indicators.candle_patterns import analyze_candle_patterns
 from plotting.candlestick import add_candlestick_trace
 from plotting.bollinger_bands import add_bollinger_bands_traces
 from plotting.ichimoku import add_ichimoku_traces
@@ -21,6 +25,8 @@ from plotting.moving_averages import add_moving_averages_traces
 from plotting.rsi import add_rsi_traces
 from plotting.macd import add_macd_traces
 from plotting.volume import add_volume_trace
+from plotting.support import add_support_trace
+from plotting.resistance import add_resistance_trace
 
 # Load environment variables
 load_dotenv()
@@ -57,6 +63,10 @@ def build_chart(data: CandleData, config: ChartConfig):
     
     if config.show_macd:
         df = calculate_macd(df)
+    
+    if config.show_sr:
+        df = calculate_support(df)
+        df = calculate_resistance(df)
     
     # Create subplots - determine number of rows based on indicators
     total_rows = 2  # Price + Volume
@@ -100,6 +110,9 @@ def build_chart(data: CandleData, config: ChartConfig):
     if config.show_ma:
         fig = add_moving_averages_traces(fig, df, row=1, col=1)
     
+    if config.show_sr:
+        fig = add_support_trace(fig, df, row=1, col=1)
+        fig = add_resistance_trace(fig, df, row=1, col=1)
     # Add volume
     fig = add_volume_trace(fig, df, row=2, col=1)
     
@@ -171,29 +184,34 @@ def build_chart(data: CandleData, config: ChartConfig):
     if os.path.exists(output_file):
         os.remove(output_file)
     
-    return {
+    # Tính xu hướng giá theo tuần (chỉ khi TR=True)
+    response = {
         "message": "✅ Vẽ biểu đồ và upload thành công",
         "upload_result": url
     }
+    
+    if config.show_tr:
+        trends = calculate_weekly_trend(df, config.symbol, config.start_date, config.end_date)
+        trend_summary = get_trend_summary(trends)
+        response["trend"] = trends
+        response["trend_summary"] = trend_summary
+    
+    # Phân tích mẫu nến (chỉ khi CP=True)
+    if config.show_cp:
+        candle_analysis = analyze_candle_patterns(df)
+        response["candle_analysis"] = candle_analysis
+    
+    return response
 
 @app.get("/")
 def root():
     return {"message": "Stock Analysis API is running"}
 
 @app.post("/plot")
-def plot_candlestick_symbol(
-        symbol: str = Query(..., description="Stock symbol"),
-        startDate: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
-        endDate: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-        MA: bool = Query(False, description="Show Moving Averages (MA10, MA50, MA100, MA200)"),
-        BB: bool = Query(False, description="Show Bollinger Bands (20-period, 2 std dev)"),
-        ICH: bool = Query(False, description="Show Ichimoku Cloud (Tenkan, Kijun, Senkou A/B, Chikou)"),
-        RSI: bool = Query(False, description="Show Relative Strength Index (RSI)"),
-        MACD: bool = Query(False, description="Show MACD (Moving Average Convergence Divergence)")):
-    
+def plot_candlestick_symbol(request: ChartRequest):
     try:
         # Fetch data
-        data = fetch_stock_data(symbol, startDate, endDate)
+        data = fetch_stock_data(request.symbol, request.startDate, request.endDate)
         
         if not data or len(data) < 2:
             raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu hoặc dữ liệu không đủ để vẽ biểu đồ.")
@@ -215,12 +233,15 @@ def plot_candlestick_symbol(
         
         # Create chart config
         config = ChartConfig(
-            show_ma=MA,
-            show_bb=BB,
-            show_ich=ICH,
-            show_rsi=RSI,
-            show_macd=MACD,
-            symbol=symbol.upper(),
+            show_ma=request.MA,
+            show_bb=request.BB,
+            show_ich=request.ICH,
+            show_rsi=request.RSI,
+            show_macd=request.MACD,
+            show_sr=request.SR,
+            show_tr=request.TR,
+            show_cp=request.CP,
+            symbol=request.symbol.upper(),
             start_date=actual_start_date,
             end_date=actual_end_date
         )
