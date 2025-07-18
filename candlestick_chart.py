@@ -17,7 +17,7 @@ from indicators.macd import calculate_macd
 from indicators.support import calculate_support
 from indicators.resistance import calculate_resistance
 from indicators.trend_analysis import calculate_weekly_trend, get_trend_summary
-from indicators.candle_patterns import analyze_candle_patterns
+from indicators.candle_patterns import analyze_candle_patterns, classify_candle_pattern
 from plotting.candlestick import add_candlestick_trace
 from plotting.bollinger_bands import add_bollinger_bands_traces
 from plotting.ichimoku import add_ichimoku_traces
@@ -27,6 +27,7 @@ from plotting.macd import add_macd_traces
 from plotting.volume import add_volume_trace
 from plotting.support import add_support_trace
 from plotting.resistance import add_resistance_trace
+from plotting.pattern_highlights import add_pattern_highlights, get_highlighted_pattern_summary
 
 # Load environment variables
 load_dotenv()
@@ -67,6 +68,19 @@ def build_chart(data: CandleData, config: ChartConfig):
     if config.show_sr:
         df = calculate_support(df)
         df = calculate_resistance(df)
+    
+    # Phân tích candle patterns nếu cần (để có data cho highlighting)
+    df_with_patterns = None
+    if config.show_cp or any([
+        config.highlight_doji, config.highlight_marubozu, 
+        config.highlight_spinning_top, config.highlight_hammer,
+        config.highlight_hanging_man, config.highlight_inverted_hammer,
+        config.highlight_shooting_star, config.highlight_star_doji,
+        config.highlight_long_legged_doji, config.highlight_dragonfly_doji,
+        config.highlight_gravestone_doji
+    ]):
+        df_with_patterns = classify_candle_pattern(df)
+        df = df_with_patterns  # Update main df
     
     # Create subplots - determine number of rows based on indicators
     total_rows = 2  # Price + Volume
@@ -125,6 +139,10 @@ def build_chart(data: CandleData, config: ChartConfig):
     if config.show_macd:
         fig = add_macd_traces(fig, df, row=current_row, col=1)
     
+    # Thêm pattern highlights (sau khi vẽ xong tất cả indicators)
+    if df_with_patterns is not None:
+        fig = add_pattern_highlights(fig, df_with_patterns, config, total_rows)
+    
     # Update layout
     start_display = pd.to_datetime(config.start_date).strftime('%d/%m/%Y')
     end_display = pd.to_datetime(config.end_date).strftime('%d/%m/%Y')
@@ -136,35 +154,112 @@ def build_chart(data: CandleData, config: ChartConfig):
     if config.show_macd:
         chart_height += 100
     
+    # Set fixed dark background theme với grid rõ ràng cho đo đạc
     fig.update_layout(
         title=f'Candlestick Chart for Stock {config.symbol} ({start_display} - {end_display})',
-        template='plotly_white',
+        template='plotly_dark',
         xaxis_rangeslider_visible=False,
         height=chart_height,
+        paper_bgcolor='#141823',  # Màu nền toàn bộ chart
+        plot_bgcolor='#141823',   # Màu nền vùng plot
+        font=dict(color='white'), # Màu chữ trắng
+        xaxis=dict(
+            gridcolor='#3a3f4a',    # Grid màu sáng hơn để dễ thấy
+            gridwidth=1,            # Độ dày grid
+            showgrid=True,          # Hiển thị grid
+            color='white',
+            tickmode='auto',        # Tự động tạo tick marks
+            mirror=True,            # Hiển thị tick ở cả 2 bên
+            showline=True,          # Hiển thị border
+            linecolor='#3a3f4a'
+        ),
+        yaxis=dict(
+            gridcolor='#3a3f4a',    # Grid màu sáng hơn để dễ thấy
+            gridwidth=1,            # Độ dày grid
+            showgrid=True,          # Hiển thị grid
+            color='white',
+            tickmode='auto',        # Tự động tạo tick marks
+            mirror=True,            # Hiển thị tick ở cả 2 bên
+            showline=True,          # Hiển thị border
+            linecolor='#3a3f4a'
+        )
     )
     
-    # Configure y-axis titles
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Volume", row=2, col=1)
+    # Configure y-axis titles với grid đồng nhất
+    fig.update_yaxes(
+        title_text="Price", 
+        row=1, col=1,
+        gridcolor='#3a3f4a',
+        gridwidth=1,
+        showgrid=True,
+        color='white',
+        mirror=True,
+        showline=True,
+        linecolor='#3a3f4a'
+    )
+    fig.update_yaxes(
+        title_text="Volume", 
+        row=2, col=1,
+        gridcolor='#3a3f4a',
+        gridwidth=1,
+        showgrid=True,
+        color='white',
+        mirror=True,
+        showline=True,
+        linecolor='#3a3f4a'
+    )
     
-    # Set y-axis titles for indicators
+    # Set y-axis titles cho indicators với grid
     current_row = 3
     if config.show_rsi:
-        fig.update_yaxes(title_text="RSI", range=[0, 100], row=current_row, col=1)
+        fig.update_yaxes(
+            title_text="RSI", 
+            range=[0, 100], 
+            row=current_row, col=1,
+            gridcolor='#3a3f4a',
+            gridwidth=1,
+            showgrid=True,
+            color='white',
+            mirror=True,
+            showline=True,
+            linecolor='#3a3f4a'
+        )
         current_row += 1
         
     if config.show_macd:
-        fig.update_yaxes(title_text="MACD", row=current_row, col=1)
+        fig.update_yaxes(
+            title_text="MACD", 
+            row=current_row, col=1,
+            gridcolor='#3a3f4a',
+            gridwidth=1,
+            showgrid=True,
+            color='white',
+            mirror=True,
+            showline=True,
+            linecolor='#3a3f4a'
+        )
     
-    # Configure x-axis to show only on bottom chart
+    # Configure x-axis với grid đồng nhất cho tất cả subplots
     total_rows = 2
     if config.show_rsi:
         total_rows += 1
     if config.show_macd:
         total_rows += 1
     
-    for i in range(1, total_rows):
-        fig.update_xaxes(showticklabels=False, row=i, col=1)
+    # Cập nhật x-axis cho tất cả rows với grid
+    for i in range(1, total_rows + 1):
+        show_labels = (i == total_rows)  # Chỉ hiện labels ở row cuối
+        fig.update_xaxes(
+            showticklabels=show_labels, 
+            row=i, col=1,
+            gridcolor='#3a3f4a',
+            gridwidth=1,
+            showgrid=True,
+            color='white',
+            mirror=True,
+            showline=True,
+            linecolor='#3a3f4a'
+        )
     
     # Save and upload
     output_file = "candlestick.png"
@@ -200,6 +295,12 @@ def build_chart(data: CandleData, config: ChartConfig):
     if config.show_cp:
         candle_analysis = analyze_candle_patterns(df)
         response["candle_analysis"] = candle_analysis
+    
+    # Thêm thông tin về highlighted patterns
+    if df_with_patterns is not None:
+        highlighted_patterns = get_highlighted_pattern_summary(df_with_patterns, config)
+        if highlighted_patterns:
+            response["highlighted_patterns"] = highlighted_patterns
     
     return response
 
@@ -241,6 +342,20 @@ def plot_candlestick_symbol(request: ChartRequest):
             show_sr=request.SR,
             show_tr=request.TR,
             show_cp=request.CP,
+            
+            # Copy pattern highlight flags
+            highlight_doji=request.highlight_doji,
+            highlight_marubozu=request.highlight_marubozu,
+            highlight_spinning_top=request.highlight_spinning_top,
+            highlight_hammer=request.highlight_hammer,
+            highlight_hanging_man=request.highlight_hanging_man,
+            highlight_inverted_hammer=request.highlight_inverted_hammer,
+            highlight_shooting_star=request.highlight_shooting_star,
+            highlight_star_doji=request.highlight_star_doji,
+            highlight_long_legged_doji=request.highlight_long_legged_doji,
+            highlight_dragonfly_doji=request.highlight_dragonfly_doji,
+            highlight_gravestone_doji=request.highlight_gravestone_doji,
+            
             symbol=request.symbol.upper(),
             start_date=actual_start_date,
             end_date=actual_end_date

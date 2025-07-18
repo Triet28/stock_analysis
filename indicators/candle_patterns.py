@@ -61,6 +61,10 @@ def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
     df_result = df.copy()
     df_result['candle_pattern'] = 'Standard'
     
+    # Lưu lại format Date gốc
+    original_date_format = df_result['Date'].dtype == 'object'
+    original_dates = df_result['Date'].copy()
+    
     # Tính toán các giá trị cần thiết
     df_result['body_size'] = abs(df_result['Close'] - df_result['Open'])
     df_result['upper_shadow'] = df_result['High'] - df_result[['Open', 'Close']].max(axis=1)
@@ -77,6 +81,10 @@ def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
     
     # Tính xu hướng theo tuần để phân biệt Hammer/Hanging Man và Inverted Hammer/Shooting Star
     df_result = _calculate_weekly_trend_for_patterns(df_result)
+    
+    # Khôi phục lại Date format gốc nếu cần
+    if original_date_format:
+        df_result['Date'] = original_dates
     
     # Ngưỡng phân loại
     SMALL_BODY_THRESHOLD = 0.1      # Thân nến nhỏ
