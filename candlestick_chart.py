@@ -16,7 +16,7 @@ from indicators.rsi import calculate_rsi
 from indicators.macd import calculate_macd
 from indicators.support import calculate_support
 from indicators.resistance import calculate_resistance
-from indicators.trend_analysis import calculate_weekly_trend, get_trend_summary
+from indicators.trend_analysis import calculate_trend, get_trend_summary
 from indicators.candle_patterns import analyze_candle_patterns, classify_candle_pattern
 from plotting.candlestick import add_candlestick_trace
 from plotting.bollinger_bands import add_bollinger_bands_traces
@@ -34,7 +34,7 @@ load_dotenv()
 
 app = FastAPI(title="Stock Analysis API", description="API for stock candlestick charts with technical indicators")
 
-def build_chart(data: CandleData, config: ChartConfig):
+def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"):
     """Build complete chart with all indicators"""
     # Prepare DataFrame
     df = pd.DataFrame({
@@ -309,11 +309,11 @@ def build_chart(data: CandleData, config: ChartConfig):
     
     # Add trend analysis if enabled
     if config.show_tr:
-        weekly_trends = calculate_weekly_trend(df, config.symbol, config.start_date, config.end_date)
+        weekly_trends = calculate_trend(df, config.symbol, config.start_date, config.end_date, exchange)
         trend_summary = get_trend_summary(weekly_trends)
         response["trend_analysis"] = {
-            "weekly_trends": weekly_trends,  # Detail từng tuần
-            "summary": trend_summary         # Tổng hợp
+            "weekly_trends": weekly_trends,  
+            "summary": trend_summary         
         }
     
     return response
@@ -335,7 +335,8 @@ def plot_candlestick(request: ChartRequest):
         dates = [pd.to_datetime(item["time"]) for item in data]
         actual_start_date = min(dates).strftime('%Y-%m-%d')
         actual_end_date = max(dates).strftime('%Y-%m-%d')
-        
+        exchange = data[0].get("stock_code", {}).get("exchange", "Unknown")
+
         # Convert to CandleData
         candle_data = CandleData(
             dates=[item["time"] for item in data],
@@ -373,7 +374,7 @@ def plot_candlestick(request: ChartRequest):
         )
         
         # Build and return chart
-        return build_chart(candle_data, config)
+        return build_chart(candle_data, config, exchange)
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi xử lý dữ liệu: {str(e)}")
