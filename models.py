@@ -23,7 +23,6 @@ class ChartRequest(BaseModel):
     CP: bool = False  # Candle Pattern Analysis
     
     # Candle Pattern Highlights
-    highlight_doji: bool = False
     highlight_marubozu: bool = False
     highlight_spinning_top: bool = False
     highlight_hammer: bool = False
@@ -46,7 +45,6 @@ class ChartConfig(BaseModel):
     show_cp: bool = False  # Candle Pattern Analysis
     
     # Candle Pattern Highlights
-    highlight_doji: bool = False
     highlight_marubozu: bool = False
     highlight_spinning_top: bool = False
     highlight_hammer: bool = False

@@ -159,7 +159,7 @@ uvicorn candlestick_chart:app --host 0.0.0.0 --port 8000
 
 ### 2. Truy cập API
 
-Server sẽ chạy tại: `http://localhost:8000`
+Server sẽ chạy tại: `   `
 
 - **API Documentation**: `http://localhost:8000/docs`
 - **Alternative docs**: `http://localhost:8000/redoc`
