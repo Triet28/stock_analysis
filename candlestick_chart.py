@@ -1,3 +1,4 @@
+import traceback
 from fastapi import FastAPI, Query, HTTPException
 from typing import Optional
 import pandas as pd
@@ -6,8 +7,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import base64
 import os
+import datetime
 
-from models import CandleData, ChartConfig, ChartRequest
+from models import CandleData, ChartConfig, ChartRequest, PredictRequest
 from utils import fetch_stock_data, update_attachment
 from indicators.moving_averages import calculate_moving_averages
 from indicators.bollinger_bands import calculate_bollinger_bands
@@ -28,8 +30,8 @@ from plotting.volume import add_volume_trace
 from plotting.support import add_support_trace
 from plotting.resistance import add_resistance_trace
 from plotting.pattern_highlights import add_pattern_highlights, get_highlighted_pattern_summary
+from prediction.future_prediction import predict_future_trend
 
-# Load environment variables
 load_dotenv()
 
 app = FastAPI(title="Stock Analysis API", description="API for stock candlestick charts with technical indicators")
@@ -65,7 +67,6 @@ def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"
     if config.show_macd:
         df = calculate_macd(df)
     
-    # Thêm Support & Resistance nếu cần
     if config.show_sr:
         df = calculate_support(df)
         df = calculate_resistance(df)
@@ -84,7 +85,9 @@ def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"
         config.highlight_dragonfly_doji,
         config.highlight_gravestone_doji
     ]):
-        df_with_patterns = classify_candle_pattern(df)
+        # Cần trends để phân loại candle patterns chính xác
+        trends = calculate_trend(df, config.symbol, config.start_date, config.end_date, exchange)
+        df_with_patterns = classify_candle_pattern(df, trends)
         df = df_with_patterns  # Update main df
     
     # Create subplots - determine number of rows based on indicators
@@ -322,15 +325,23 @@ def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"
 def root():
     return {"message": "Stock Analysis API is running"}
 
+@app.get("/test-predict")
+def test_predict():
+    """Test endpoint để kiểm tra predict có hoạt động không"""
+    return {"message": "Predict endpoint is working", "status": "OK"}
+
 @app.post("/plot")
 def plot_candlestick(request: ChartRequest):
     try:
+        # Ensure symbol is a string for all usages
+        symbol = request.symbol.upper()
+
         # Fetch data
-        data = fetch_stock_data(request.symbol, request.startDate, request.endDate)
-        
+        data = fetch_stock_data(symbol, request.startDate, request.endDate)
+
         if not data or len(data) < 2:
             raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu hoặc dữ liệu không đủ để vẽ biểu đồ.")
-        
+
         # Extract actual date range
         dates = [pd.to_datetime(item["time"]) for item in data]
         actual_start_date = min(dates).strftime('%Y-%m-%d')
@@ -346,8 +357,7 @@ def plot_candlestick(request: ChartRequest):
             close=[item["close"] for item in data],
             volume=[item["volume"] for item in data]
         )
-        
-        # Create chart config - map từ request sang config
+
         config = ChartConfig(
             show_ma=request.MA,
             show_bb=request.BB,
@@ -368,7 +378,7 @@ def plot_candlestick(request: ChartRequest):
             highlight_long_legged_doji=request.highlight_long_legged_doji,
             highlight_dragonfly_doji=request.highlight_dragonfly_doji,
             highlight_gravestone_doji=request.highlight_gravestone_doji,
-            symbol=request.symbol.upper(),
+            symbol=symbol,
             start_date=actual_start_date,
             end_date=actual_end_date
         )
@@ -378,6 +388,114 @@ def plot_candlestick(request: ChartRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi xử lý dữ liệu: {str(e)}")
+
+@app.post("/predict")
+def predict_stock(request: PredictRequest):
+    """
+    Endpoint dự đoán xu hướng tương lai dựa trên 5 phương pháp phân tích:
+    RSI, Candle Patterns, Moving Averages, MACD, Bollinger Bands
+    
+    Args:
+        request: PredictRequest với symbol và range ("short" hoặc "long")
+        range: "short" - sử dụng 20 ngày giao dịch gần nhất
+               "long" - sử dụng 60 ngày giao dịch gần nhất
+    
+    Returns:
+        Dict chứa final_statement (BUY/SELL/HOLD) và analysis chi tiết từ 5 phương pháp
+    """
+    try:
+        if not request.range or request.range.lower() not in ["short", "long"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Tham số 'range' phải là 'short' hoặc 'long', giá trị nhận được: '{request.range}'"
+            )
+        
+        # Use our trading days utilities from utils module
+        from utils import get_start_date_for_trading_days
+        
+        # Set endDate to today
+        current_date = datetime.datetime.now()
+        range_value = request.range.lower()
+        end_date = current_date
+        
+        # Calculate start date to ensure we have enough trading days
+        required_trading_days = 60 if range_value == "short" else 180  # 20/60 days + buffer for calculations
+        start_date = get_start_date_for_trading_days(end_date, required_trading_days)
+        
+        # Format dates for API
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+        
+        # Fetch data - truyền đúng thứ tự start_date, end_date
+        data = fetch_stock_data(request.symbol.upper(), start_date_str, end_date_str)
+        
+        if not data:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Không tìm thấy dữ liệu cho mã chứng khoán '{request.symbol.upper()}' trong khoảng thời gian từ {start_date_str} đến {end_date_str}"
+            )
+        elif len(data) < 2:
+            raise HTTPException(
+                status_code=422, 
+                detail=f"Dữ liệu cho mã '{request.symbol.upper()}' không đủ để phân tích. Cần ít nhất 2 điểm dữ liệu, nhận được {len(data)}."
+            )
+        
+        # Extract actual date range và exchange
+        dates = [pd.to_datetime(item["time"]) for item in data]
+        data_start_date = min(dates).strftime('%Y-%m-%d')
+        data_end_date = max(dates).strftime('%Y-%m-%d')
+        exchange = data[0].get("stock_code", {}).get("exchange", "Unknown")
+        
+        # Prepare DataFrame
+        df = pd.DataFrame({
+            'Date': pd.to_datetime([item["time"] for item in data], utc=True, errors='coerce'),
+            'Open': [item["open"] for item in data],
+            'High': [item["high"] for item in data],
+            'Low': [item["low"] for item in data],
+            'Close': [item["close"] for item in data],
+            'Volume': [item["volume"] for item in data]
+        })
+        df = df.dropna(subset=['Date'])
+        df = df.sort_values('Date')
+        df['Date'] = df['Date'].dt.strftime('%d/%m/%Y')
+        
+        # Calculate all indicators needed for analysis
+        df = calculate_moving_averages(df)
+        df = calculate_bollinger_bands(df)
+        df = calculate_rsi(df)
+        df = calculate_macd(df)
+        df = calculate_support(df)
+        df = calculate_resistance(df)
+        
+        # Phân tích trends trước để dùng cho candle patterns
+        trends = calculate_trend(df, request.symbol.upper(), data_start_date, data_end_date, exchange)
+        
+        # Dự đoán tương lai với 5 phương pháp (mỗi method tự gọi indicator của mình)
+        future_prediction = predict_future_trend(df, trends, exchange)
+        
+        # Thêm metadata cần thiết vào response
+        # Ensure symbol is a string for .upper()
+        response = {
+            "symbol": request.symbol.upper(),
+            "startDate": data_start_date,
+            "endDate": data_end_date, 
+            "range": request.range,
+            "exchange": exchange,
+            "final_statement": future_prediction["final_statement"],
+            "analysis": future_prediction["analysis"]
+        }
+        
+        return response
+        
+    except HTTPException as he:
+        # Re-raise HTTP exceptions as they already have proper status codes and messages
+        raise he
+    except Exception as e:
+        # Handle general exceptions with a clear error message
+        error_detail = f"Lỗi khi xử lý dữ liệu hoặc dự đoán: {str(e)}"
+        # Add trace for debugging if needed
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail)
 
 if __name__ == "__main__":
     import uvicorn

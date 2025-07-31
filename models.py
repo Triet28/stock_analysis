@@ -34,6 +34,10 @@ class ChartRequest(BaseModel):
     highlight_dragonfly_doji: bool = False
     highlight_gravestone_doji: bool = False
 
+class PredictRequest(BaseModel):
+    symbol: str
+    range: str = "unknown"
+
 class ChartConfig(BaseModel):
     show_ma: bool = False
     show_bb: bool = False

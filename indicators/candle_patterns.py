@@ -1,16 +1,23 @@
 import pandas as pd
 import numpy as np
 from typing import List, Dict
+import sys
+import os
 
-def _calculate_weekly_trend_for_patterns(df: pd.DataFrame) -> pd.DataFrame:
+# Thêm parent directory vào path để import
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from indicators.trend_analysis import calculate_trend
+
+def _map_trends_to_dataframe(df: pd.DataFrame, trends: List[Dict]) -> pd.DataFrame:
     """
-    Tính xu hướng theo tuần cho việc phân loại candle patterns
+    Map xu hướng từ trend_analysis vào DataFrame để phân loại candle patterns
     
     Args:
         df: DataFrame với cột Date, Open, High, Low, Close
+        trends: Danh sách xu hướng từ trend_analysis
         
     Returns:
-        DataFrame với cột 'weekly_trend' mới
+        DataFrame với cột 'trend_context' mới
     """
     df_result = df.copy()
     
@@ -18,46 +25,23 @@ def _calculate_weekly_trend_for_patterns(df: pd.DataFrame) -> pd.DataFrame:
     if df_result['Date'].dtype == 'object':
         df_result['Date'] = pd.to_datetime(df_result['Date'], format='%d/%m/%Y')
     
-    # Thêm cột week để nhóm theo tuần
-    df_result['Week'] = df_result['Date'].dt.isocalendar().week
-    df_result['Year'] = df_result['Date'].dt.year
-    df_result['WeekYear'] = df_result['Year'].astype(str) + '_' + df_result['Week'].astype(str)
+    # Tạo cột xu hướng mặc định
+    df_result['trend_context'] = 'sideways'
     
-    # Tạo cột xu hướng tuần
-    df_result['weekly_trend'] = 'sideways'
-    
-    # Nhóm theo tuần và tính xu hướng
-    for week_year, week_data in df_result.groupby('WeekYear'):
-        if len(week_data) < 1:
-            continue
+    # Map xu hướng từ trend_analysis vào từng ngày
+    for trend in trends:
+        trend_start = pd.to_datetime(trend['period'].split(' to ')[0], format='%d/%m/%Y')
+        trend_end = pd.to_datetime(trend['period'].split(' to ')[1], format='%d/%m/%Y')
         
-        # Sắp xếp theo ngày trong tuần
-        week_data_sorted = week_data.sort_values('Date')
-        
-        # Lấy giá đóng cửa đầu tuần và cuối tuần
-        first_close = week_data_sorted.iloc[0]['Close']
-        last_close = week_data_sorted.iloc[-1]['Close']
-        
-        # Tính phần trăm thay đổi
-        if first_close != 0:
-            percent_change = ((last_close - first_close) / first_close) * 100
-        else:
-            percent_change = 0
-        
-        # Xác định xu hướng tuần
-        if percent_change >= 1:
-            trend = 'uptrend'
-        elif percent_change <= -1:
-            trend = 'downtrend'
-        else:
-            trend = 'sideways'
-        
-        # Gán xu hướng cho tất cả các ngày trong tuần
-        df_result.loc[week_data.index, 'weekly_trend'] = trend
+        # Gán xu hướng cho tất cả ngày trong khoảng thời gian này
+        # Chuyển về lowercase để đồng nhất
+        trend_value = trend['trend'].lower()
+        mask = (df_result['Date'] >= trend_start) & (df_result['Date'] <= trend_end)
+        df_result.loc[mask, 'trend_context'] = trend_value
     
     return df_result
 
-def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
+def classify_candle_pattern(df: pd.DataFrame, exchange: str, trends: List[Dict] = None) -> pd.DataFrame:
     df_result = df.copy()
     df_result['candle_pattern'] = 'Standard'
     
@@ -70,8 +54,9 @@ def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
     df_result['upper_shadow'] = df_result['High'] - df_result[['Open', 'Close']].max(axis=1)
     df_result['lower_shadow'] = df_result[['Open', 'Close']].min(axis=1) - df_result['Low']
     df_result['total_range'] = df_result['High'] - df_result['Low']
-    
+    df_result['body_percentage'] = (abs(df_result['Close'] - df_result['Open']) / df_result['Open']) * 100
     # Tính toán ngưỡng cho việc phân loại
+
     df_result['body_ratio'] = df_result['body_size'] / df_result['total_range']
     df_result['upper_shadow_ratio'] = df_result['upper_shadow'] / df_result['total_range']
     df_result['lower_shadow_ratio'] = df_result['lower_shadow'] / df_result['total_range']
@@ -79,8 +64,14 @@ def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
     # Xác định loại nến (xanh/đỏ)
     df_result['is_green'] = df_result['Close'] > df_result['Open']
     
-    # Tính xu hướng theo tuần để phân biệt Hammer/Hanging Man và Inverted Hammer/Shooting Star
-    df_result = _calculate_weekly_trend_for_patterns(df_result)
+    # Sử dụng xu hướng từ trend_analysis hoặc tự động phân tích
+    
+    # Map xu hướng vào DataFrame
+    if trends:
+        df_result = _map_trends_to_dataframe(df_result, trends)
+    else:
+        # Fallback: không có xu hướng, tất cả sẽ được phân loại là sideways
+        df_result['trend_context'] = 'sideways'
     
     # Khôi phục lại Date format gốc nếu cần
     if original_date_format:
@@ -88,82 +79,77 @@ def classify_candle_pattern(df: pd.DataFrame) -> pd.DataFrame:
     
     # Ngưỡng phân loại
     SMALL_BODY_THRESHOLD = 0.1      # Thân nến nhỏ
-    LARGE_BODY_THRESHOLD = 0.7      # Thân nến lớn
     SMALL_SHADOW_THRESHOLD = 0.05   # Râu ngắn
-    LARGE_SHADOW_THRESHOLD = 0.4    # Râu dài
+    LARGE_SHADOW_THRESHOLD = 0.3    # Râu dài
     DOJI_THRESHOLD = 0.03           # Ngưỡng cho Doji
+    
+    # Ngưỡng Marubozu theo sàn giao dịch
+    if exchange == "HSX":
+        MARUBOZU_THRESHOLD = 3      # 3% movement cho HSX
+    elif exchange == "HNX":
+        MARUBOZU_THRESHOLD = 5      # 5% movement cho HNX
+    elif exchange== "UPCOM":
+        MARUBOZU_THRESHOLD = 7      # 7% movement cho UPCOM
+    else:
+        MARUBOZU_THRESHOLD = 3      # Mặc định HSX nếu không xác định được sàn
     
     for idx in df_result.index:
         row = df_result.loc[idx]
+        trend = row.get('trend_context', 'sideways').lower()  # Chuyển về lowercase để match
         
-        # 1. Nến Doji và các biến thể
+        # 1. Nến Doji và các biến thể (ưu tiên cao nhất)
         if row['body_ratio'] <= DOJI_THRESHOLD:
-            # Star
+            # Star Doji - râu ngắn, gần bằng nhau
             if (row['upper_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and 
                 row['lower_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and 
-                abs(row['lower_shadow_ratio'] - row['upper_shadow_ratio']) <= 0.02):  # Gần bằng nhau
+                abs(row['lower_shadow_ratio'] - row['upper_shadow_ratio']) <= 0.02):
                 df_result.loc[idx, 'candle_pattern'] = 'Star Doji'
-            # Long Legged Doji    
+            
+            # Long Legged Doji - cả 2 râu đều dài và gần bằng nhau
             elif (abs(row['upper_shadow_ratio'] - row['lower_shadow_ratio']) <= 0.1 and
                   row['upper_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD and
                   row['lower_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD):
                 df_result.loc[idx, 'candle_pattern'] = 'Long Legged Doji'
-            # Dragonfly Doji
+            
+            # Dragonfly Doji - râu trên ngắn, râu dưới dài
             elif (row['upper_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and
-                  row['lower_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD):
-                df_result.loc[idx, 'candle_pattern'] = 'Dragonfly Doji'
+                    row['lower_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD):
+                if row['trend_context'] == 'downtrend':
+                    df_result.loc[idx, 'candle_pattern'] = 'Dragonfly Doji'
+                elif row['trend_context'] == 'uptrend':
+                    df_result.loc[idx, 'candle_pattern'] = 'Hanging Man'
             # Gravestone Doji
             elif (row['lower_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and
                   row['upper_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD):
-                df_result.loc[idx, 'candle_pattern'] = 'Gravestone Doji'
-            # Doji thông thường
-            else:
-                df_result.loc[idx, 'candle_pattern'] = 'Doji'
+                if row['trend_context'] == 'uptrend':
+                    df_result.loc[idx, 'candle_pattern'] = 'Gravestone Doji'
+                elif row['trend_context'] == 'downtrend':
+                    df_result.loc[idx, 'candle_pattern'] = 'Inverted Hammer'
         
-        # 2. Nến Marubozu
-        elif (row['body_ratio'] >= LARGE_BODY_THRESHOLD and
-              row['upper_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and
-              row['lower_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD):
+        # 2. Nến Marubozu - thân lớn, râu ngắn, không phụ thuộc trend
+        elif (row['upper_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and
+              row['lower_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD and
+              row['body_percentage'] >= MARUBOZU_THRESHOLD):
             df_result.loc[idx, 'candle_pattern'] = 'Marubozu'
         
-        # 3. Nến Spinning Top
-        elif (row['body_ratio'] <= SMALL_BODY_THRESHOLD and
-              row['upper_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD and
-              row['lower_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD):
-            df_result.loc[idx, 'candle_pattern'] = 'Spinning Top'
-        
-        # 4. Nến Hammer/Hanging Man (dựa trên xu hướng tuần)
+        # 3. Hammer/Hanging Man - thân nhỏ, râu dưới dài, râu trên ngắn
         elif (row['body_ratio'] <= SMALL_BODY_THRESHOLD and
               row['lower_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD and
               row['upper_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD):
-            # Nếu trong xu hướng giảm -> Hammer (tín hiệu đảo chiều tăng)
-            if row['weekly_trend'] == 'downtrend':
+            if trend == 'downtrend':
                 df_result.loc[idx, 'candle_pattern'] = 'Hammer'
-            # Nếu trong xu hướng tăng -> Hanging Man (tín hiệu đảo chiều giảm)
-            elif row['weekly_trend'] == 'uptrend':
+            elif trend == 'uptrend':
                 df_result.loc[idx, 'candle_pattern'] = 'Hanging Man'
-            # Nếu trong xu hướng ngang -> Hammer (mặc định)
-            else:
-                df_result.loc[idx, 'candle_pattern'] = 'Hammer'
+            # Nếu sideways, không phân loại thành pattern đặc biệt
         
-        # 5. Nến Inverted Hammer/Shooting Star (dựa trên xu hướng tuần)
+        # 4. Inverted Hammer/Shooting Star - thân nhỏ, râu trên dài, râu dưới ngắn
         elif (row['body_ratio'] <= SMALL_BODY_THRESHOLD and
               row['upper_shadow_ratio'] >= LARGE_SHADOW_THRESHOLD and
               row['lower_shadow_ratio'] <= SMALL_SHADOW_THRESHOLD):
-            # Nếu trong xu hướng giảm -> Inverted Hammer (tín hiệu đảo chiều tăng)
-            if row['weekly_trend'] == 'downtrend':
+            if trend == 'downtrend':
                 df_result.loc[idx, 'candle_pattern'] = 'Inverted Hammer'
-            # Nếu trong xu hướng tăng -> Shooting Star (tín hiệu đảo chiều giảm)
-            elif row['weekly_trend'] == 'uptrend':
+            elif trend == 'uptrend':
                 df_result.loc[idx, 'candle_pattern'] = 'Shooting Star'
-            # Nếu trong xu hướng ngang -> Inverted Hammer (mặc định)
-            else:
-                df_result.loc[idx, 'candle_pattern'] = 'Inverted Hammer'
-        
-        # 6. Nến Standard (mặc định)
-        else:
-            df_result.loc[idx, 'candle_pattern'] = 'Standard'
-    
     return df_result
 
 def detect_gaps(df: pd.DataFrame) -> pd.DataFrame:
@@ -209,9 +195,10 @@ def get_candle_statistics(df: pd.DataFrame) -> Dict:
     if 'candle_pattern' not in df.columns:
         return {"error": "DataFrame không có cột 'candle_pattern'"}
     
-    pattern_counts = df['candle_pattern'].value_counts().to_dict()
+    filtered_df = df[df['candle_pattern'] != 'Standard']
+    pattern_counts = filtered_df['candle_pattern'].value_counts().to_dict()
+    total_special_candles = len(filtered_df)
     total_candles = len(df)
-    
     pattern_percentages = {
         pattern: {
             "count": count,
@@ -221,24 +208,26 @@ def get_candle_statistics(df: pd.DataFrame) -> Dict:
     }
     
     return {
-        "total_candles": total_candles,
+        "total_special_candles": total_special_candles,
         "pattern_distribution": pattern_percentages,
-        "most_common_pattern": max(pattern_counts, key=pattern_counts.get),
+        # "most_common_pattern": max(pattern_counts, key=pattern_counts.get),
         "pattern_types": list(pattern_counts.keys())
     }
 
-def analyze_candle_patterns(df: pd.DataFrame) -> Dict:
+def analyze_candle_patterns(df: pd.DataFrame, trends: List[Dict] = None, exchange: str = "HSX") -> Dict:
     """
     Phân tích toàn diện các mẫu nến
     
     Args:
         df: DataFrame với OHLC data
+        trends: Danh sách xu hướng từ trend_analysis (optional)
+        exchange: Sàn giao dịch để xác định ngưỡng Marubozu (HSX/HNX/UPCOM)
         
     Returns:
         Dict chứa phân tích chi tiết
     """
-    # Phân loại nến
-    df_with_patterns = classify_candle_pattern(df)
+    # Phân loại nến với trends và exchange
+    df_with_patterns = classify_candle_pattern(df, exchange, trends)
     
     # Phát hiện gaps
     df_with_gaps = detect_gaps(df_with_patterns)
@@ -256,6 +245,5 @@ def analyze_candle_patterns(df: pd.DataFrame) -> Dict:
             "total_gaps": sum(count for gap_type, count in gap_counts.items() if gap_type != 'No Gap'),
             "rising_windows": gap_counts.get('Rising Window', 0),
             "falling_windows": gap_counts.get('Falling Window', 0)
-        },
-        "detailed_data": df_with_gaps[['Date', 'Open', 'High', 'Low', 'Close', 'candle_pattern', 'gap_type']].to_dict('records')
+        }
     }
