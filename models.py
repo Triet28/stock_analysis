@@ -37,6 +37,7 @@ class ChartRequest(BaseModel):
 class PredictRequest(BaseModel):
     symbol: str
     range: str = "unknown"
+    endDate: Optional[str] = None
 
 class ChartConfig(BaseModel):
     show_ma: bool = False

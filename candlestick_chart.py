@@ -412,14 +412,16 @@ def predict_stock(request: PredictRequest):
         
         # Use our trading days utilities from utils module
         from utils import get_start_date_for_trading_days
-        
         # Set endDate to today
-        current_date = datetime.datetime.now()
+        if request.endDate:
+            print(f"endDate from request: {request.endDate}")
+            end_date = pd.to_datetime(request.endDate, format='%Y-%m-%d')
+        else:
+            end_date = datetime.datetime.now()
         range_value = request.range.lower()
-        end_date = current_date
         
         # Calculate start date to ensure we have enough trading days
-        required_trading_days = 60 if range_value == "short" else 180  # 20/60 days + buffer for calculations
+        required_trading_days = 60 if range_value == "short" else 180 
         start_date = get_start_date_for_trading_days(end_date, required_trading_days)
         
         # Format dates for API

@@ -6,3 +6,7 @@ kaleido
 requests
 python-dotenv
 ta
+numpy
+pydantic
+python-multipart 
+typing-extensions
