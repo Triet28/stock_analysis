@@ -66,7 +66,7 @@ def main():
     parser.add_argument('--check', action='store_true', 
                       help='Check environment setup and exit')
     parser.add_argument('--port', type=int, default=8686,
-                      help='Port to run the API server on (default: 8000)')
+                      help='Port to run the API server on (default: 8686)')
     
     args = parser.parse_args()
     
