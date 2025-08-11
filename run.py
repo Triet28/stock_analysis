@@ -65,7 +65,7 @@ def main():
                       help='Choose which service to run: api, bot, or both (default)')
     parser.add_argument('--check', action='store_true', 
                       help='Check environment setup and exit')
-    parser.add_argument('--port', type=int, default=8000,
+    parser.add_argument('--port', type=int, default=8686,
                       help='Port to run the API server on (default: 8000)')
     
     args = parser.parse_args()
@@ -97,7 +97,7 @@ def main():
                     "log_level": "info"
                 }
             )
-            api_thread.daemon = True
+            api_thread.daemon = False
             api_thread.start()
             logger.info(f"API server starting in background on port {args.port}...")
         else:
