@@ -289,10 +289,12 @@ def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"
     if os.path.exists(output_file):
         os.remove(output_file)
     
-    # Prepare comprehensive response
+    # Prepare comprehensive response with date information
     response = {
         "message": "✅ Vẽ biểu đồ và upload thành công",
-        "chart_url": url
+        "chart_url": url,
+        "startDate": config.start_date,
+        "endDate": config.end_date
     }
     
     # Add candle pattern analysis if enabled
@@ -324,11 +326,6 @@ def build_chart(data: CandleData, config: ChartConfig, exchange: str = "Unknown"
 @app.get("/")
 def root():
     return {"message": "Stock Analysis API is running"}
-
-@app.get("/test-predict")
-def test_predict():
-    """Test endpoint để kiểm tra predict có hoạt động không"""
-    return {"message": "Predict endpoint is working", "status": "OK"}
 
 @app.post("/plot")
 def plot_candlestick(request: ChartRequest):
@@ -414,7 +411,6 @@ def predict_stock(request: PredictRequest):
         from utils import get_start_date_for_trading_days
         # Set endDate to today
         if request.endDate:
-            print(f"endDate from request: {request.endDate}")
             end_date = pd.to_datetime(request.endDate, format='%Y-%m-%d')
         else:
             end_date = datetime.datetime.now()

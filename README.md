@@ -1,6 +1,6 @@
-# Stock Analysis API
+# Stock Analysis API & Telegram Bot
 
-API phân tích cổ phiếu với các chỉ báo kỹ thuật (Technical Analysis) được xây dựng bằng FastAPI và Plotly.
+Hệ thống phân tích cổ phiếu toàn diện với các chỉ báo kỹ thuật (Technical Analysis) được xây dựng bằng FastAPI, Plotly và Telegram Bot.
 
 ## Tính năng
 
@@ -15,6 +15,8 @@ API phân tích cổ phiếu với các chỉ báo kỹ thuật (Technical Analy
 - **Phân tích xu hướng**: Tự động phân tích xu hướng giá theo tuần
 - **Volume Chart**: Hiển thị khối lượng giao dịch
 - **Export PNG**: Tự động upload và trả về URL hình ảnh
+- **Phân tích dự đoán**: Đưa ra khuyến nghị BUY/SELL/HOLD dựa trên phân tích đa chỉ báo
+- **Telegram Bot**: Giao diện tương tác tiện lợi để phân tích và theo dõi cổ phiếu
 
 ## Cài đặt
 
@@ -157,6 +159,53 @@ uvicorn candlestick_chart:app --reload --host 0.0.0.0 --port 8000
 uvicorn candlestick_chart:app --host 0.0.0.0 --port 8000
 ```
 
+### 2. Chạy ứng dụng
+
+Ứng dụng có thể chạy API server, Telegram Bot hoặc cả hai cùng lúc.
+
+#### Sử dụng script run.py
+
+```bash
+# Kích hoạt virtual environment
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+
+# Chạy cả API server và Telegram Bot
+python run.py --service both
+
+# Chỉ chạy API server
+python run.py --service api --port 8080
+
+# Chỉ chạy Telegram Bot
+python run.py --service bot
+
+# Kiểm tra môi trường
+python run.py --check
+```
+
+#### Chạy riêng từng thành phần
+
+Trước khi chạy bot, đảm bảo đã thêm các biến môi trường sau vào file `.env`:
+
+```properties
+# Telegram Bot Token (từ BotFather)
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+
+# URL của API server
+SERVER_URL=http://localhost:8000
+```
+
+Chạy API server:
+```bash
+python -m uvicorn candlestick_chart:app --reload --host 0.0.0.0 --port 8000
+```
+
+Chạy Telegram Bot:
+```bash
+# Đảm bảo đã kích hoạt virtual environment
+python telegram_bot.py
+```
+
 ### 2. Truy cập API
 
 Server sẽ chạy tại: `   `
@@ -233,6 +282,25 @@ result = response.json()
 print(f"Chart URL: {result['upload_result']}")
 ```
 
+## Telegram Bot
+
+### Các lệnh có sẵn
+
+- **/start** - Khởi động bot và hiển thị hướng dẫn
+- **/help** - Hiển thị trợ giúp chi tiết
+- **/predict [mã CK] [short/long]** - Phân tích và đưa ra khuyến nghị
+  - VD: `/predict FPT short`
+- **/chart [mã CK]** - Hiển thị biểu đồ kỹ thuật
+  - VD: `/chart VNM`
+
+### Tính năng Telegram Bot
+
+- **Phân tích kỹ thuật**: Sử dụng 5 chỉ báo kỹ thuật phổ biến
+- **Biểu đồ trực quan**: Hiển thị biểu đồ candlestick với đầy đủ chỉ báo
+- **Phát hiện mẫu hình nến**: Nhận diện và giải thích các mẫu hình nến quan trọng
+- **Giao diện tương tác**: Sử dụng nút (buttons) để tương tác dễ dàng
+- **Phân tích theo khung thời gian**: Lựa chọn phân tích ngắn hạn hoặc dài hạn
+
 ## Cấu trúc dự án
 
 ```
@@ -240,19 +308,24 @@ stock_analysis/
 ├── candlestick_chart.py     # Main FastAPI application
 ├── models.py                # Data models và chart config
 ├── utils.py                 # Utility functions (API calls, file operations)
+├── telegram_bot.py          # Telegram Bot interface
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables
-├── README.md               # Documentation
-├── indicators/             # Technical indicators calculations
+├── README.md                # Documentation
+├── indicators/              # Technical indicators calculations
 │   ├── moving_averages.py
 │   ├── bollinger_bands.py
 │   ├── ichimoku.py
 │   ├── rsi.py
 │   ├── macd.py
-│   ├── support.py          # Support level calculations
-│   ├── resistance.py       # Resistance level calculations
-│   └── trend_analysis.py   # Weekly trend analysis
-└── plotting/               # Chart plotting functions
+│   ├── support.py           # Support level calculations
+│   ├── resistance.py        # Resistance level calculations
+│   └── trend_analysis.py    # Weekly trend analysis
+├── prediction/              # Prediction & signal analysis
+│   ├── rsi_signal_analysis.py
+│   ├── macd_signal_analysis.py
+│   └── future_prediction.py
+└── plotting/                # Chart plotting functions
     ├── candlestick.py
     ├── volume.py
     ├── moving_averages.py
@@ -260,9 +333,8 @@ stock_analysis/
     ├── ichimoku.py
     ├── rsi.py
     ├── macd.py
-    ├── support.py          # Support level plotting
-    └── resistance.py       # Resistance level plotting
-    └── support_resistance.py
+    ├── support.py           # Support level plotting
+    └── resistance.py        # Resistance level plotting
 ```
 
 ## Response Format
@@ -321,7 +393,12 @@ API trả về JSON với định dạng:
 
 - Đảm bảo đã kích hoạt virtual environment
 - Cài đặt lại dependencies: `pip install -r requirements.txt`
-```
+
+### Lỗi Telegram Bot
+
+- Đảm bảo đã đúng `TELEGRAM_BOT_TOKEN` trong file `.env`
+- Kiểm tra `SERVER_URL` đã đúng và server API đang chạy
+- Kiểm tra kết nối internet và quyền truy cập vào API Telegram
 
 ## Dependencies
 
@@ -335,3 +412,24 @@ Các thư viện chính:
 - `ta`: Technical analysis indicators
 - `python-dotenv`: Environment variables
 - `requests`: HTTP client
+- `python-telegram-bot`: Thư viện Telegram Bot API
+
+## Screenshots
+
+> Note: Add your own screenshots to the `/screenshots` folder to display them in the README.
+
+### Telegram Bot
+
+![Telegram Bot Preview](/screenshots/telegram_bot_preview.png)
+
+### API Documentation
+
+![API Documentation](/screenshots/api_docs.png)
+
+### Candlestick Chart
+
+![Candlestick Chart](/screenshots/candlestick_chart.png)
+
+## License
+
+[MIT License](LICENSE)
