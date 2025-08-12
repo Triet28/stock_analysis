@@ -58,13 +58,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "   - Phân tích kỹ thuật và đưa ra khuyến nghị\n"
         "   - `short`: Phân tích ngắn hạn (20 ngày)\n"
         "   - `long`: Phân tích dài hạn (60 ngày)\n"
-        "   - `ngày`: (Tùy chọn) Ngày kết thúc phân tích (YYYY-MM-DD)\n"
+        "   - `ngày`: (Tùy chọn) Ngày kết thúc phân tích (YYYY-MM-DD). Nếu để trống sẽ lấy ngày hiện tại.\n"
         "   - Ví dụ: `/predict FPT short` hoặc `/predict FPT long 2025-08-05`\n\n"
         "2️⃣ */chart [mã CK]*\n"
         "   - Hiển thị biểu đồ kỹ thuật\n"
+        "   - Có thể thêm khoảng thời gian: `/chart FPT 2023-01-01 2023-03-01`. Nếu để trống sẽ lấy khoảng thời gian mặc định (730 ngày kể từ ngày hiện tại)\n"
         "   - Ví dụ: `/chart VNM`\n\n"
         "3️⃣ */settings*\n"
-        "   - Tùy chỉnh cài đặt biểu đồ và các chỉ báo kỹ thuật\n\n"
+        "   - Tùy chỉnh cài đặt biểu đồ và các chỉ báo kỹ thuật\n"
+        "   - Có thể tùy chỉnh được các tham số như: MA, MACD, RSI, Dải Bollinger, Mây Ichimoku. Khi các tham số này được bật, nó sẽ được thêm vào biểu đồ.\n"
+        "   - Có thể tùy chỉnh việc hiển thị các nến đặc biệt trên biểu đồ. Lưu ý chỉ có thể hiển thị một lúc 4 loại nến đặc biệt\n"
         "4️⃣ */help*\n"
         "   - Hiển thị hướng dẫn này\n\n"
         "*Các chỉ báo được sử dụng:*\n"
@@ -742,7 +745,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text(
             "🕯️ *CÀI ĐẶT MẪU HÌNH NẾN*\n\n"
             "Chọn các mẫu hình nến bạn muốn đánh dấu trên biểu đồ.\n"
-            "Lưu ý: Cài đặt 'Candle Patterns' phải được bật để các đánh dấu này có hiệu lực.",
+            "Lưu ý: Cài đặt 'Candle Patterns' phải được bật để các đánh dấu này có hiệu lực.\n"
+            "Chỉ được bật tối đa 4 loại nến cùng lúc",
             parse_mode="Markdown",
             reply_markup=reply_markup
         )
@@ -754,11 +758,34 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
         # Lấy cài đặt hiện tại và toggle giá trị
         plot_settings = get_plot_settings(user_id)
         current_value = plot_settings.get(setting_key, False)
+        #plot_settings[setting_key] = not current_value
+        
+        # # Lưu cài đặt mới
+        # update_plot_settings(user_id, {setting_key: not current_value})
+        
+        if setting_key.startswith("highlight_") and not current_value:
+    # Danh sách các key liên quan đến mẫu hình nến
+            candle_pattern_keys = [
+                "highlight_marubozu", "highlight_spinning_top", "highlight_hammer",
+                "highlight_hanging_man", "highlight_inverted_hammer", "highlight_shooting_star",
+                "highlight_star_doji", "highlight_long_legged_doji", 
+                "highlight_dragonfly_doji", "highlight_gravestone_doji"
+            ]
+    
+    # Đếm số mẫu hình nến đang được bật
+            enabled_patterns = sum(1 for key in candle_pattern_keys if plot_settings.get(key, False))
+    
+    # Nếu đã có 4 mẫu hình được bật, không cho bật thêm
+            if enabled_patterns >= 4:
+                await query.answer("⚠️ Chỉ được bật tối đa 4 loại nến đặc biệt cùng lúc. Vui lòng tắt một loại trước khi bật loại này.")
+                return
+        
+        # Nếu không vượt quá giới hạn hoặc đang tắt một cài đặt, thực hiện bình thường
         plot_settings[setting_key] = not current_value
         
         # Lưu cài đặt mới
         update_plot_settings(user_id, {setting_key: not current_value})
-        
+
         # Hiển thị thông báo thành công và cập nhật menu
         if setting_key.startswith("highlight_"):
             await query.answer(f"Đã {'bật' if not current_value else 'tắt'} {setting_key.replace('highlight_', '')}")
@@ -798,7 +825,8 @@ async def handle_settings_callback(update: Update, context: ContextTypes.DEFAULT
             await query.edit_message_text(
                 "🕯️ *CÀI ĐẶT MẪU HÌNH NẾN*\n\n"
                 "Chọn các mẫu hình nến bạn muốn đánh dấu trên biểu đồ.\n"
-                "Lưu ý: Cài đặt 'Candle Patterns' phải được bật để các đánh dấu này có hiệu lực.",
+                "Lưu ý: Cài đặt 'Candle Patterns' phải được bật để các đánh dấu này có hiệu lực.\n"
+                "Chỉ được phép hiển thị tối đa 4 loại nến cùng lúc. Vui lòng tắt một loại nến khác trước.",
                 parse_mode="Markdown",
                 reply_markup=reply_markup
             )

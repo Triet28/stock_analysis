@@ -85,7 +85,19 @@ def update_plot_settings(user_id: int, new_settings: Dict[str, Any]) -> bool:
     if "plot" not in current_settings:
         current_settings["plot"] = DEFAULT_PLOT_SETTINGS
     
+    candle_highlight_keys = [key for key in current_settings["plot"].keys() if key.startswith("highlight_")]
+    
     for key, value in new_settings.items():
+        # Nếu đang cố gắng BẬT một nến mới
+        if key.startswith("highlight_") and value is True and current_settings["plot"].get(key) is False:
+            # Đếm số lượng nến hiện đang bật
+            active_candle_patterns = sum(1 for k in candle_highlight_keys if current_settings["plot"].get(k) is True)
+            
+            # Nếu đã có 4 loại nến đang bật và đang cố gắng bật thêm
+            if active_candle_patterns >= 4:
+                return False, "Chỉ được phép hiển thị tối đa 4 loại nến cùng lúc. Vui lòng tắt một loại nến khác trước."
+        
+        # Cập nhật cài đặt nếu key hợp lệ
         if key in current_settings["plot"]:
             current_settings["plot"][key] = value
     
