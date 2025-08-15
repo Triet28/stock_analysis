@@ -27,6 +27,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [InlineKeyboardButton("Phân tích cổ phiếu", callback_data="help_predict")],
         [InlineKeyboardButton("Xem biểu đồ", callback_data="help_chart")],
+        [InlineKeyboardButton("Theo dõi mã CK", callback_data="help_follow")],
         [InlineKeyboardButton("Cài đặt biểu đồ", callback_data="settings_plot")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -38,6 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Các lệnh cơ bản:*\n"
         f"• /predict [mã CK] [short/long] - Phân tích và đưa ra khuyến nghị\n"
         f"• /chart [mã CK] - Xem biểu đồ kỹ thuật\n"
+        f"• /follow [mã CK] [short/long] - Theo dõi mã chứng khoán\n"
         f"• /settings - Cài đặt các chỉ báo kỹ thuật\n"
         f"• /help - Xem hướng dẫn chi tiết\n\n"
         f"Bấm vào nút bên dưới để xem hướng dẫn chi tiết về từng lệnh:"
@@ -64,11 +66,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "   - Hiển thị biểu đồ kỹ thuật\n"
         "   - Có thể thêm khoảng thời gian: `/chart FPT 2023-01-01 2023-03-01`. Nếu để trống sẽ lấy khoảng thời gian mặc định (730 ngày kể từ ngày hiện tại)\n"
         "   - Ví dụ: `/chart VNM`\n\n"
-        "3️⃣ */settings*\n"
+        "3️⃣ */follow [mã CK] [short/long]*\n"
+        "   - Theo dõi mã chứng khoán để nhận thông báo cập nhật\n"
+        "   - `short`: Theo dõi ngắn hạn\n"
+        "   - `long`: Theo dõi dài hạn\n"
+        "   - Ví dụ: `/follow FPT short` hoặc `/follow VNM long`\n\n"
+        "4️⃣ */settings*\n"
         "   - Tùy chỉnh cài đặt biểu đồ và các chỉ báo kỹ thuật\n"
         "   - Có thể tùy chỉnh được các tham số như: MA, MACD, RSI, Dải Bollinger, Mây Ichimoku. Khi các tham số này được bật, nó sẽ được thêm vào biểu đồ.\n"
         "   - Có thể tùy chỉnh việc hiển thị các nến đặc biệt trên biểu đồ. Lưu ý chỉ có thể hiển thị một lúc 4 loại nến đặc biệt\n"
-        "4️⃣ */help*\n"
+        "5️⃣ */help*\n"
         "   - Hiển thị hướng dẫn này\n\n"
         "*Các chỉ báo được sử dụng:*\n"
         "• RSI (Relative Strength Index)\n"
@@ -81,6 +88,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     keyboard = [
         [InlineKeyboardButton("Phân tích cổ phiếu", callback_data="help_predict")],
         [InlineKeyboardButton("Xem biểu đồ", callback_data="help_chart")],
+        [InlineKeyboardButton("Theo dõi mã CK", callback_data="help_follow")],
         [InlineKeyboardButton("Cài đặt", callback_data="help_settings")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -132,6 +140,28 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             "• Moving Averages\n"
             "• Bollinger Bands\n"
             "• RSI và MACD (nếu có)"
+        )
+        await query.message.reply_text(help_text, parse_mode="Markdown")
+        
+    elif query.data == "help_follow":
+        help_text = (
+            "*👁️ HƯỚNG DẪN LỆNH FOLLOW*\n\n"
+            "Cú pháp: `/follow [mã CK] [short/long]`\n\n"
+            "*Tham số:*\n"
+            "• `[mã CK]`: Mã cổ phiếu cần theo dõi (VD: FPT, VNM)\n"
+            "• `[short/long]`: Khung thời gian theo dõi\n"
+            "  - `short`: Theo dõi ngắn hạn\n"
+            "  - `long`: Theo dõi dài hạn\n\n"
+            "*Ví dụ:*\n"
+            "• `/follow FPT short` - Theo dõi ngắn hạn mã FPT\n"
+            "• `/follow VNM long` - Theo dõi dài hạn mã VNM\n\n"
+            "*Bot sẽ:*\n"
+            "• Lưu thông tin theo dõi của bạn\n"
+            "• Ghi nhận mã CK, khung thời gian, user ID, chat ID và username\n"
+            "• Chuẩn bị để gửi thông báo cập nhật (tính năng sẽ được phát triển)\n\n"
+            "*Lưu ý:*\n"
+            "• Mã chứng khoán có thể viết hoa hoặc thường (bot sẽ tự chuyển đổi)\n"
+            "• Thông tin theo dõi được lưu riêng cho từng người dùng"
         )
         await query.message.reply_text(help_text, parse_mode="Markdown")
         
@@ -332,21 +362,38 @@ async def predict(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Hàm xem biểu đồ kỹ thuật của mã chứng khoán"""
     if not context.args:
-        await update.message.reply_text(
-            '⚠️ Vui lòng nhập mã chứng khoán!\n'
-            'Ví dụ: `/chart FPT`\n'
-            'Hoặc với khoảng thời gian: `/chart FPT 2023-01-01 2023-03-01`',
-            parse_mode="Markdown"
-        )
+        # Xử lý cả Update và CallbackQuery
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(
+                '⚠️ Vui lòng nhập mã chứng khoán!\n'
+                'Ví dụ: `/chart FPT`\n'
+                'Hoặc với khoảng thời gian: `/chart FPT 2023-01-01 2023-03-01`',
+                parse_mode="Markdown"
+            )
+        elif hasattr(update, 'edit_message_text'):
+            await update.edit_message_text(
+                '⚠️ Vui lòng nhập mã chứng khoán!\n'
+                'Ví dụ: `/chart FPT`\n'
+                'Hoặc với khoảng thời gian: `/chart FPT 2023-01-01 2023-03-01`',
+                parse_mode="Markdown"
+            )
         return
     
     symbol = context.args[0].upper()
     
-    # Thông báo đang xử lý
-    processing_message = await update.message.reply_text(
-        f'⏳ Đang tạo biểu đồ cho mã *{symbol}*...',
-        parse_mode="Markdown"
-    )
+    # Thông báo đang xử lý - xử lý cả Update và CallbackQuery
+    if hasattr(update, 'message') and update.message:
+        processing_message = await update.message.reply_text(
+            f'⏳ Đang tạo biểu đồ cho mã *{symbol}*...',
+            parse_mode="Markdown"
+        )
+    elif hasattr(update, 'edit_message_text'):
+        processing_message = await update.edit_message_text(
+            f'⏳ Đang tạo biểu đồ cho mã *{symbol}*...',
+            parse_mode="Markdown"
+        )
+    else:
+        processing_message = None
     
     try:
         # Khởi tạo các biến startDate và endDate (có thể để trống, API sẽ xử lý)
@@ -360,15 +407,18 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 start_date = context.args[1]
                 datetime.datetime.strptime(start_date, '%Y-%m-%d')  # Validate format
             except ValueError:
-                await update.message.reply_text(
-                    '⚠️ Định dạng ngày bắt đầu không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD.\n'
-                    'Ví dụ: `/chart FPT 2023-01-01`',
-                    parse_mode="Markdown"
-                )
-                await context.bot.delete_message(
-                    chat_id=update.message.chat_id,
-                    message_id=processing_message.message_id
-                )
+                error_message = ('⚠️ Định dạng ngày bắt đầu không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD.\n'
+                               'Ví dụ: `/chart FPT 2023-01-01`')
+                
+                if hasattr(update, 'message') and update.message:
+                    await update.message.reply_text(error_message, parse_mode="Markdown")
+                    if processing_message:
+                        await context.bot.delete_message(
+                            chat_id=update.message.chat_id,
+                            message_id=processing_message.message_id
+                        )
+                elif hasattr(update, 'edit_message_text'):
+                    await update.edit_message_text(error_message, parse_mode="Markdown")
                 return
                 
         # Kiểm tra nếu có tham số cho end_date
@@ -378,19 +428,30 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 end_date = context.args[2]
                 datetime.datetime.strptime(end_date, '%Y-%m-%d')  # Validate format
             except ValueError:
-                await update.message.reply_text(
-                    '⚠️ Định dạng ngày kết thúc không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD.\n'
-                    'Ví dụ: `/chart FPT 2023-01-01 2023-03-01`',
-                    parse_mode="Markdown"
-                )
-                await context.bot.delete_message(
-                    chat_id=update.message.chat_id,
-                    message_id=processing_message.message_id
-                )
+                error_message = ('⚠️ Định dạng ngày kết thúc không hợp lệ. Vui lòng sử dụng định dạng YYYY-MM-DD.\n'
+                               'Ví dụ: `/chart FPT 2023-01-01 2023-03-01`')
+                
+                if hasattr(update, 'message') and update.message:
+                    await update.message.reply_text(error_message, parse_mode="Markdown")
+                    if processing_message:
+                        await context.bot.delete_message(
+                            chat_id=update.message.chat_id,
+                            message_id=processing_message.message_id
+                        )
+                elif hasattr(update, 'edit_message_text'):
+                    await update.edit_message_text(error_message, parse_mode="Markdown")
                 return
         
         # Lấy settings của người dùng
-        user_id = update.effective_user.id
+        # Xử lý user_id cho cả Update và CallbackQuery
+        if hasattr(update, 'effective_user'):
+            user_id = update.effective_user.id
+        elif hasattr(update, 'from_user'):
+            user_id = update.from_user.id
+        else:
+            # Fallback - sử dụng user_id mặc định hoặc báo lỗi
+            user_id = 0
+            
         plot_settings = get_plot_settings(user_id)
         
         # Chuẩn bị request data với settings của người dùng
@@ -415,14 +476,28 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if response.status_code == 200:
             result = response.json()
             
-            # Xóa thông báo đang xử lý
-            await context.bot.delete_message(
-                chat_id=update.message.chat_id,
-                message_id=processing_message.message_id
-            )
-            
+            # Xác định chat_id dựa trên loại update
+            if hasattr(update, 'message') and update.message:
+                chat_id = update.message.chat_id
+                # Xóa thông báo đang xử lý
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            elif hasattr(update, 'callback_query'):
+                chat_id = update.callback_query.message.chat_id
+                # Xóa thông báo callback
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            else:
+                chat_id = None
+                
             # Gửi biểu đồ
-            if "chart_url" in result:
+            if "chart_url" in result and chat_id:
                 caption = f"📊 *Biểu đồ kỹ thuật {symbol}*\n"
                 
                 # Kiểm tra nhiều trường hợp khác nhau về key trong response
@@ -441,7 +516,9 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     default_start_date = (datetime.datetime.now() - datetime.timedelta(days=90)).strftime('%d/%m/%Y')
                     caption += f"(Dữ liệu từ {default_start_date} đến {default_end_date}, ước tính)"
                 
-                await update.message.reply_photo(
+                # Gửi biểu đồ
+                sent_message = await context.bot.send_photo(
+                    chat_id=chat_id,
                     photo=result["chart_url"],
                     caption=caption,
                     parse_mode="Markdown"
@@ -482,9 +559,11 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             patterns_message += f"• Rising Windows (tín hiệu tăng): {gaps.get('rising_windows', 0)}\n"
                             patterns_message += f"• Falling Windows (tín hiệu giảm): {gaps.get('falling_windows', 0)}\n\n"
                     
-                    await update.message.reply_text(
-                        patterns_message,
-                        parse_mode="Markdown"
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=patterns_message,
+                        parse_mode="Markdown",
+                        reply_to_message_id=sent_message.message_id
                     )
                 
                 # 2. Phân tích Trend Analysis nếu TR được bật trong settings
@@ -531,25 +610,44 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                                 
                                 trend_message += f"{trend_icon} *{period}* ({days_count} ngày): {percent_change}\n"
                     
-                    await update.message.reply_text(
-                        trend_message,
-                        parse_mode="Markdown"
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=trend_message,
+                        parse_mode="Markdown",
+                        reply_to_message_id=sent_message.message_id
                     )
                 
                 # Nếu không có thông tin bổ sung nào được hiển thị nhưng CP hoặc TR được bật
                 if not additional_info_sent and (plot_settings.get("CP", False) or plot_settings.get("TR", False)):
-                    await update.message.reply_text(
-                        "⚠️ Không có thông tin phân tích bổ sung nào được phát hiện cho mã này.",
-                        parse_mode="Markdown"
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text="⚠️ Không có thông tin phân tích bổ sung nào được phát hiện cho mã này.",
+                        parse_mode="Markdown",
+                        reply_to_message_id=sent_message.message_id
                     )
             else:
-                await update.message.reply_text("❌ Không thể tạo biểu đồ.")
+                if hasattr(update, 'message') and update.message:
+                    await update.message.reply_text("❌ Không thể tạo biểu đồ.")
+                elif chat_id:
+                    await context.bot.send_message(chat_id=chat_id, text="❌ Không thể tạo biểu đồ.")
         else:
-            # Xóa thông báo đang xử lý
-            await context.bot.delete_message(
-                chat_id=update.message.chat_id,
-                message_id=processing_message.message_id
-            )
+            # Xác định chat_id và xóa thông báo đang xử lý
+            if hasattr(update, 'message') and update.message:
+                chat_id = update.message.chat_id
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            elif hasattr(update, 'callback_query'):
+                chat_id = update.callback_query.message.chat_id
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            else:
+                chat_id = None
             
             error_message = f"❌ Lỗi: {response.status_code}"
             try:
@@ -558,55 +656,184 @@ async def chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             except:
                 error_message += f"\n{response.text}"
                 
-            await update.message.reply_text(error_message)
+            if hasattr(update, 'message') and update.message:
+                await update.message.reply_text(error_message)
+            elif chat_id:
+                await context.bot.send_message(chat_id=chat_id, text=error_message)
     
     except Exception as e:
         logger.error(f"Error in chart command: {str(e)}", exc_info=True)
-        # Xóa thông báo đang xử lý
+        
+        # Xác định chat_id và xóa thông báo đang xử lý
         try:
-            await context.bot.delete_message(
-                chat_id=update.message.chat_id,
-                message_id=processing_message.message_id
-            )
+            if hasattr(update, 'message') and update.message:
+                chat_id = update.message.chat_id
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            elif hasattr(update, 'callback_query'):
+                chat_id = update.callback_query.message.chat_id
+                if processing_message:
+                    await context.bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=processing_message.message_id
+                    )
+            else:
+                chat_id = None
         except:
             pass
             
+        error_message = (f"❌ Không thể tạo biểu đồ: {str(e)}\n"
+                        f"Vui lòng kiểm tra lại kết nối hoặc thử lại sau.")
+        
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(error_message)
+        elif chat_id:
+            await context.bot.send_message(chat_id=chat_id, text=error_message)
+
+async def follow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hàm theo dõi mã chứng khoán"""
+    # Kiểm tra số lượng tham số
+    if len(context.args) < 2:
         await update.message.reply_text(
-            f"❌ Không thể tạo biểu đồ: {str(e)}\n"
-            f"Vui lòng kiểm tra lại kết nối hoặc thử lại sau."
+            '⚠️ Vui lòng nhập đủ thông tin!\n'
+            'Cú pháp: `/follow [mã CK] [short/long]`\n'
+            'Ví dụ: `/follow FPT short` hoặc `/follow aaa long`',
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Lấy thông tin từ tham số
+    symbol = context.args[0].upper()  # Chuyển thành chữ hoa
+    range_param = context.args[1].lower()  # Chuyển thành chữ thường
+    
+    # Kiểm tra tham số range hợp lệ
+    if range_param not in ["short", "long"]:
+        await update.message.reply_text(
+            '⚠️ Tham số khung thời gian không hợp lệ!\n'
+            'Chỉ chấp nhận `short` hoặc `long`.\n'
+            'Ví dụ: `/follow FPT short` hoặc `/follow VNM long`',
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Lấy thông tin người dùng và chat
+    user_id = update.effective_user.id
+    chat_id = update.message.chat_id
+    username = update.effective_user.username or "N/A"  # Có thể null nên cần fallback
+    
+    # Tạo dữ liệu để lưu trữ hoặc gửi đến API
+    follow_data = {
+        "symbol": symbol,
+        "range": range_param,
+        "user_id": user_id,
+        "chat_id": chat_id,
+        "username": username
+    }
+    
+    # Log thông tin để debug (có thể bỏ trong production)
+    
+    try:
+        # Thông báo thành công
+        WEBHOOK_URL = os.getenv('DIGIFORCE_WEBHOOK_URL')
+        response = requests.post(
+            WEBHOOK_URL,
+            json={'data':follow_data},
+            headers={'Content-Type': 'application/json'}
+        )
+        print(f"Webhook response: {response.status_code} - {response.text}")
+
+        # success_message = (
+        #     f"✅ *Đã theo dõi mã {symbol}*\n\n"
+        #     f"📊 *Mã chứng khoán:* {symbol}\n"
+        #     f"⏱️ *Thời hạn đầu tư:* {range_param.upper()}\n"
+        #     f"👤 *Người theo dõi:* @{username}\n"
+        #     # f"🆔 *User ID:* {user_id}\n"
+        #     # f"💬 *Chat ID:* {chat_id}\n\n"
+        #     f"Bạn sẽ nhận được thông báo khi có cập nhật về mã {symbol}."
+        # )
+        
+        # await update.message.reply_text(
+        #     success_message,
+        #     parse_mode="Markdown"
+        # )
+        
+        # TODO: Ở đây bạn có thể:
+        # 1. Lưu dữ liệu vào database
+        # 2. Gửi đến API endpoint để xử lý
+        # 3. Thêm vào hệ thống notification
+        
+        # Ví dụ gửi đến API (uncomment nếu cần):
+        # try:
+        #     response = requests.post(
+        #         f"{os.getenv('SERVER_URL')}/follow",
+        #         json=follow_data,
+        #         timeout=10
+        #     )
+        #     if response.status_code != 200:
+        #         logger.error(f"Failed to save follow data: {response.text}")
+        # except requests.exceptions.RequestException as e:
+        #     logger.error(f"Error sending follow data to API: {str(e)}")
+        
+    except Exception as e:
+        logger.error(f"Error in follow command: {str(e)}", exc_info=True)
+        
+        await update.message.reply_text(
+            f"❌ Có lỗi xảy ra khi theo dõi mã {symbol}.\n"
+            f"Vui lòng thử lại sau."
         )
 
 async def handle_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Xử lý tin nhắn không phải là lệnh"""
     text = update.message.text
-    
     # Kiểm tra xem có phải là mã chứng khoán không (3-4 chữ cái viết hoa)
-    if text.isupper() and 2 <= len(text) <= 4 and text.isalpha():
+    if len(text) == 3 and text.isalpha():
+        if text.isupper():
         # Người dùng có thể đã nhập mã chứng khoán
-        keyboard = [
-            [
-                InlineKeyboardButton(f"Phân tích ngắn hạn {text}", callback_data=f"analyze_{text}_short"),
-                InlineKeyboardButton(f"Phân tích dài hạn {text}", callback_data=f"analyze_{text}_long")
-            ],
-            [
-                InlineKeyboardButton(f"Biểu đồ {text}", callback_data=f"chart_{text}")
+            keyboard = [
+                [
+                    InlineKeyboardButton(f"Phân tích ngắn hạn {text}", callback_data=f"analyze_{text}_short"),
+                    InlineKeyboardButton(f"Phân tích dài hạn {text}", callback_data=f"analyze_{text}_long")
+                ],
+                [
+                    InlineKeyboardButton(f"Biểu đồ {text}", callback_data=f"chart_{text}")
+                ]
             ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"Bạn muốn thực hiện hành động nào với mã *{text}*?",
-            parse_mode="Markdown",
-            reply_markup=reply_markup
-        )
-    else:
-        # Gửi hướng dẫn nếu không phải lệnh
-        await update.message.reply_text(
-            "Tôi không hiểu tin nhắn của bạn. Vui lòng sử dụng các lệnh:\n"
-            "/predict [mã CK] [short/long] - Phân tích cổ phiếu\n"
-            "/chart [mã CK] - Xem biểu đồ kỹ thuật\n"
-            "/help - Xem hướng dẫn chi tiết"
-        )
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"Bạn muốn thực hiện hành động nào với mã *{text}*?",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+        else:
+            text = text.upper()
+            keyboard = [
+                [
+                    InlineKeyboardButton(f"Phân tích ngắn hạn {text}", callback_data=f"analyze_{text}_short"),
+                    InlineKeyboardButton(f"Phân tích dài hạn {text}", callback_data=f"analyze_{text}_long")
+                ],
+                [
+                    InlineKeyboardButton(f"Biểu đồ {text}", callback_data=f"chart_{text}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"Có phải ý của bạn là mã chứng khoán *{text}*? Bạn muốn thực hiện hành động nào với mã *{text}*?",
+                parse_mode="Markdown",
+                reply_markup=reply_markup
+            )
+    # else:
+    #     # Gửi hướng dẫn nếu không phải lệnh
+    #     await update.message.reply_text(
+    #         "Tôi không hiểu tin nhắn của bạn. Vui lòng sử dụng các lệnh:\n"
+    #         "/predict [mã CK] [short/long] - Phân tích cổ phiếu\n"
+    #         "/chart [mã CK] - Xem biểu đồ kỹ thuật\n"
+    #         "/help - Xem hướng dẫn chi tiết"
+    #     )
 
 async def callback_actions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Xử lý hành động từ inline keyboard buttons"""
@@ -953,6 +1180,7 @@ def main() -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("predict", predict))
     app.add_handler(CommandHandler("chart", chart))
+    app.add_handler(CommandHandler("follow", follow))
     app.add_handler(CommandHandler("settings", settings_command))
     
     # Callback handlers cho các inline buttons

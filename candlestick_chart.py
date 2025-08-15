@@ -8,6 +8,9 @@ from plotly.subplots import make_subplots
 import base64
 import os
 import datetime
+from pydantic import BaseModel
+from telegram import Bot
+import asyncio
 
 from models import CandleData, ChartConfig, ChartRequest, PredictRequest
 from utils import fetch_stock_data, update_attachment
@@ -492,6 +495,142 @@ def predict_stock(request: PredictRequest):
         # Handle general exceptions with a clear error message
         error_detail = f"Lỗi khi xử lý dữ liệu hoặc dự đoán: {str(e)}"
         # Add trace for debugging if needed
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=error_detail)
+
+class TelegramPredictRequest(BaseModel):
+    symbol: str
+    range: str  # "short" hoặc "long"
+    user_id: int  # Telegram user ID, sẽ được dùng làm chat_id
+    endDate: Optional[str] = None
+
+@app.post("/telegram")
+async def telegram_predict_trigger(request: TelegramPredictRequest):
+    """
+    API endpoint để trigger lệnh /predict và gửi kết quả đến Telegram chat
+    
+    Args:
+        request: TelegramPredictRequest với symbol, range, user_id và tùy chọn endDate
+    
+    Returns:
+        Response với status và message
+    """
+    try:
+        # Validate input
+        if request.range.lower() not in ["short", "long"]:
+            raise HTTPException(
+                status_code=400, 
+                detail="Tham số range không hợp lệ. Chỉ chấp nhận 'short' hoặc 'long'"
+            )
+        
+        # Validate ngày nếu có
+        end_date = request.endDate
+        if end_date:
+            try:
+                datetime.datetime.strptime(end_date, '%Y-%m-%d')
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Định dạng ngày không hợp lệ. Sử dụng YYYY-MM-DD"
+                )
+        else:
+            end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        
+        # Gọi API predict để lấy kết quả phân tích
+        predict_request = PredictRequest(
+            symbol=request.symbol.upper(),
+            range=request.range.lower(),
+            endDate=end_date
+        )
+        
+        # Gọi hàm predict_stock để lấy kết quả
+        result = predict_stock(predict_request)
+        
+        # Format tin nhắn giống như trong telegram_bot.py
+        symbol = request.symbol.upper()
+        recommendation_icon = "🟢" if result['final_statement'] == "BUY" else "🔴" if result['final_statement'] == "SELL" else "🟡"
+        
+        message = f"*📊 PHÂN TÍCH MÃ {symbol}*\n"
+        message += f"*Khung thời gian:* {request.range.upper()}\n"
+        if 'startDate' in result and 'endDate' in result:
+            message += f"*Dữ liệu:* {result['startDate']} - {result['endDate']}\n"
+        message += f"*Khuyến nghị:* {recommendation_icon} *{result['final_statement']}*\n\n"
+        
+        # Hiển thị chi tiết từng chỉ báo
+        message += "*💹 CHI TIẾT PHÂN TÍCH:*\n\n"
+        
+        # Định nghĩa icon cho từng loại chỉ báo
+        indicator_icons = {
+            "RSI": "📈",
+            "Moving Averages": "📉", 
+            "MACD": "📊",
+            "Bollinger Bands": "🔔",
+            "Candlestick Patterns": "🕯️"
+        }
+        
+        # Định nghĩa icon cho từng khuyến nghị
+        signal_icons = {
+            "BUY": "🟢",
+            "SELL": "🔴", 
+            "HOLD": "🟡",
+            "BULLISH": "🟢",
+            "BEARISH": "🔴",
+            "NEUTRAL": "🟡"
+        }
+        
+        # Thêm phân tích chi tiết với định dạng đẹp hơn
+        for indicator, analysis in result["analysis"].items():
+            # Lấy icon cho loại chỉ báo, mặc định là 🔍 nếu không có
+            icon = indicator_icons.get(indicator, "🔍")
+            
+            # Lấy icon cho khuyến nghị, mặc định là ⚪ nếu không có
+            statement_icon = signal_icons.get(analysis['statement'], "⚪")
+            
+            # Tên chỉ báo và khuyến nghị
+            message += f"{icon} *{indicator}*: {statement_icon} {analysis['statement']}\n"
+            
+            # Thêm chi tiết phân tích của từng chỉ báo
+            if 'analysis' in analysis and analysis['analysis']:
+                for signal in analysis['analysis']:
+                    if 'signal' in signal and 'reason' in signal and 'date' in signal:
+                        # Lấy icon cho tín hiệu
+                        signal_icon = signal_icons.get(signal['signal'], "⚪")
+                        message += f"   • {signal['date']}: {signal_icon} {signal['signal']} - {signal['reason']}\n"
+            
+            # Thêm thông tin bổ sung nếu có
+            if 'details' in analysis and analysis['details']:
+                message += f"   • *Chi tiết:* {analysis['details']}\n"
+            
+            message += "\n"
+        
+        # Thêm lưu ý/disclaimer
+        message += "*Lưu ý:* Đây là phân tích kỹ thuật tự động, chỉ mang tính chất tham khảo."
+        
+        # Gửi tin nhắn đến Telegram
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        if not bot_token:
+            raise HTTPException(status_code=500, detail="TELEGRAM_BOT_TOKEN không được cấu hình")
+        
+        bot = Bot(token=bot_token)
+        
+        # Sử dụng asyncio để gửi tin nhắn
+        await bot.send_message(
+            chat_id=request.user_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+        
+        return {
+            "success": True,
+            "message": f"Đã gửi kết quả phân tích {symbol} ({request.range}) đến user {request.user_id}",
+            "symbol": symbol,
+            "range": request.range.upper(),
+            "user_id": request.user_id,
+            "recommendation": result['final_statement']
+        }
+        
+    except Exception as e:
+        error_detail = f"Lỗi khi gửi tin nhắn Telegram: {str(e)}"
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=error_detail)
 
